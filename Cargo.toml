@@ -2,5 +2,35 @@
 name = "sigil"
 version = "0.1.0"
 edition = "2024"
+description = "Invisible structural watermark for images — human-visible, machine-detectable"
+
+[[bin]]
+name = "sigil"
+path = "src/main.rs"
 
 [dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Image I/O
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Vectomancy geometry/raster pipeline (path-based)
+vectomancy = { path = "../vectomancy", default-features = false }
+vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster" }
+vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = true
