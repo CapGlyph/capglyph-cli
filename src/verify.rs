@@ -33,7 +33,12 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
         println!("WATERMARK ABSENT OR DESTROYED");
         if args.verbose {
             let (w, h) = (img.width(), img.height());
-            println!("  image:  {}×{} — no alpha channel (colour type: {:?})", w, h, img.color());
+            println!(
+                "  image:  {}×{} — no alpha channel (colour type: {:?})",
+                w,
+                h,
+                img.color()
+            );
             println!("  reason: format has no alpha channel (RGB/JPG/stripped)");
         }
         return Ok(false);
@@ -49,14 +54,25 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
 
     if present {
         println!("WATERMARK PRESENT");
+        if args.verbose {
+            println!(
+                "  image:     {}×{} ({} pixels)",
+                metrics.width, metrics.height, metrics.total_pixels
+            );
+            println!("  nonzero:   {} pixels", metrics.nonzero_alpha_count);
+            println!("  {}", metrics.summary());
+            println!("  threshold: {}", args.threshold);
+        }
     } else {
         println!("WATERMARK ABSENT OR DESTROYED");
-    }
-
-    if args.verbose {
-        println!("  image:     {}×{} ({} pixels)", w, h, metrics.total_pixels);
-        println!("  {}", metrics.summary());
-        println!("  threshold: {}", args.threshold);
+        if args.verbose {
+            println!(
+                "  image:     {}×{} ({} pixels)",
+                metrics.width, metrics.height, metrics.total_pixels
+            );
+            println!("  {}", metrics.summary());
+            println!("  threshold: {}", args.threshold);
+        }
     }
 
     Ok(present)

@@ -1,8 +1,12 @@
 [package]
 name = "sigil"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "Invisible structural watermark for images — human-visible, machine-detectable"
+
+[lib]
+name = "sigil"
+path = "src/lib.rs"
 
 [[bin]]
 name = "sigil"
@@ -37,3 +41,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [profile.release]
 opt-level = 3
 lto = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

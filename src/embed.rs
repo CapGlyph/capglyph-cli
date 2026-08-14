@@ -24,8 +24,10 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
             .with_context(|| format!("Failed to read geometry file: {:?}", geo_path))?;
         GeometryFile::from_json(&bytes)?
     } else {
-        info!("Analysing image geometry (detail={}, min_path_len={}, chaikin_iters={})",
-            args.detail, args.min_path_len, args.chaikin_iters);
+        info!(
+            "Analysing image geometry (detail={}, min_path_len={}, chaikin_iters={})",
+            args.detail, args.min_path_len, args.chaikin_iters
+        );
         extract_geometry(&src_img, orig_w, orig_h, args)?
     };
 
@@ -166,9 +168,10 @@ fn render_watermark(
         // Paint color
         let [r, g, b] = path_entry.color.unwrap_or(neutral_gray);
         let mut paint = Paint::default();
-        paint.set_color(tiny_skia::Color::from_rgba(r, g, b, 1.0).unwrap_or(
-            tiny_skia::Color::from_rgba(0.5, 0.5, 0.5, 1.0).unwrap(),
-        ));
+        paint.set_color(
+            tiny_skia::Color::from_rgba(r, g, b, 1.0)
+                .unwrap_or(tiny_skia::Color::from_rgba(0.5, 0.5, 0.5, 1.0).unwrap()),
+        );
         paint.anti_alias = true;
 
         pixmap.stroke_path(&skia_path, &paint, &stroke, Transform::identity(), None);
@@ -249,10 +252,7 @@ pub fn resolve_output(input: &Path, override_: Option<&Path>, suffix: &str, ext:
     if let Some(p) = override_ {
         return p.to_path_buf();
     }
-    let stem = input
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let stem = input.file_stem().unwrap_or_default().to_string_lossy();
     let parent = input.parent().unwrap_or(Path::new("."));
     parent.join(format!("{}{}.{}", stem, suffix, ext))
 }
