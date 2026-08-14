@@ -15,18 +15,31 @@ pub const EXIT_ABSENT: i32 = 1;
 pub fn run(args: &VerifyArgs) -> Result<bool> {
     info!("Verifying watermark in: {:?}", args.input);
 
-    // Load image — must be RGBA (4 channels)
+    // Load image — must have an alpha channel to carry a watermark
     let img = image::open(&args.input)
         .with_context(|| format!("Failed to open image: {:?}", args.input))?;
 
-    // If the image has no alpha channel it cannot carry a watermark
-    let rgba = match img {
-        image::DynamicImage::ImageRgba8(rgba) => rgba,
-        other => {
-            // Convert; if original was RGB/grayscale alpha will be all 255 → absent
-            other.to_rgba8()
+    // If the colour type has no alpha channel the watermark is absent by definition.
+    // (strip produces RGB; PNG→JPG conversion also drops alpha.)
+    let has_alpha = matches!(
+        img.color(),
+        image::ColorType::Rgba8
+            | image::ColorType::Rgba16
+            | image::ColorType::Rgba32F
+            | image::ColorType::La8
+            | image::ColorType::La16
+    );
+    if !has_alpha {
+        println!("WATERMARK ABSENT OR DESTROYED");
+        if args.verbose {
+            let (w, h) = (img.width(), img.height());
+            println!("  image:  {}×{} — no alpha channel (colour type: {:?})", w, h, img.color());
+            println!("  reason: format has no alpha channel (RGB/JPG/stripped)");
         }
-    };
+        return Ok(false);
+    }
+
+    let rgba = img.to_rgba8();
 
     let (w, h) = rgba.dimensions();
     let pixels = rgba.as_raw();

@@ -41,8 +41,10 @@ pub struct EmbedArgs {
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Watermark stroke width in pixels (sub-perceptual default)
-    #[arg(long, default_value_t = 0.002)]
+    /// Watermark stroke width in pixels (sub-perceptual default for tiny-skia renderer)
+    /// Note: tiny-skia rendering floor is ~0.008px; values below that produce zero signal.
+    /// Default 0.010px: signal present (α_nonzero≈3.4%, MAE≈0.087), invisible to humans.
+    #[arg(long, default_value_t = 0.010)]
     pub stroke: f32,
 
     /// Detail level for path extraction 1–100 (higher = more paths)
