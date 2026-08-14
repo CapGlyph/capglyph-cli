@@ -102,7 +102,10 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         geom.version
     );
 
-    // Reconstruct path pixel set
+    let rgb = img.to_rgb8();
+    let (iw, ih) = rgb.dimensions();
+
+    // Identify blocks: skeleton-guided if paths exist, PRNG fallback otherwise
     let mut path_pixels = HashSet::new();
     for path in &geom.paths {
         for point in &path.points {
@@ -113,22 +116,24 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         }
     }
 
-    let rgb = img.to_rgb8();
-    let (iw, ih) = rgb.dimensions();
-
-    // Identify blocks that contain skeleton pixels
-    let mut skeleton_blocks = HashSet::new();
-    for (px, py) in &path_pixels {
-        let bx = px / 8;
-        let by = py / 8;
-        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-            skeleton_blocks.insert((bx, by));
+    let skeleton_blocks: HashSet<(u32, u32)> = if path_pixels.is_empty() {
+        // Solid-color fallback: use stored PRNG seed from geometry file
+        let seed = geom.prng_seed.ok_or_else(|| anyhow::anyhow!(
+            "No skeleton paths and no PRNG seed in geometry file. \
+             Re-embed with current Sigil version to generate a seed."
+        ))?;
+        crate::dct::prng_blocks_from_seed(seed, iw, ih)
+    } else {
+        let mut set = HashSet::new();
+        for (px, py) in &path_pixels {
+            let bx = px / 8;
+            let by = py / 8;
+            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                set.insert((bx, by));
+            }
         }
-    }
-
-    if skeleton_blocks.is_empty() {
-        anyhow::bail!("No valid skeleton blocks found in geometry");
-    }
+        set
+    };
 
     // Sample blocks: check how many still have the marker coefficient offset
     let (u, v) = (2, 3);

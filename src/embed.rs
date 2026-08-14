@@ -120,6 +120,14 @@ fn extract_geometry(
 
     info!("Extracted {} paths from image", paths.len());
 
+    // If no paths extracted (solid color), compute PRNG seed from source image
+    let prng_seed = if paths.is_empty() {
+        let rgb = src.to_rgb8();
+        Some(crate::dct::image_seed(&rgb))
+    } else {
+        None
+    };
+
     Ok(GeometryFile {
         version: GeometryFile::CURRENT_VERSION,
         original_width: width,
@@ -131,6 +139,7 @@ fn extract_geometry(
             color: args.color,
         },
         paths,
+        prng_seed,
     })
 }
 

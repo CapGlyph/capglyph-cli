@@ -210,6 +210,7 @@ fn geometry_json_roundtrip() {
                 points: vec![[0.0, 0.0], [99.0, 99.0]],
             },
         ],
+        prng_seed: None,
     };
 
     let json = geo.to_json().unwrap();

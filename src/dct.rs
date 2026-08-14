@@ -50,37 +50,40 @@ pub const VERIFY_THRESHOLD: f32 = 8.0;
 /// Embed DCT-domain watermark along skeleton paths.
 ///
 /// Modifies `img` in-place. Returns the number of 8×8 blocks watermarked.
+///
+/// When the skeleton has no paths (solid-color images, logos), falls back to
+/// PRNG scatter: pseudorandom block selection seeded by image pixel hash.
+/// This ensures all image types can be watermarked.
 pub fn embed(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, geometry: &GeometryFile) -> Result<u64> {
     let (iw, ih) = img.dimensions();
 
     // Collect all skeleton pixels via Bresenham
     let path_pixels = collect_path_pixels(geometry, iw, ih);
-    if path_pixels.is_empty() {
-        return Ok(0);
-    }
 
-    // Determine which 8×8 blocks are intersected by the skeleton
-    let mut block_set = std::collections::HashSet::new();
-    for (px, py) in &path_pixels {
-        let bx = px / 8;
-        let by = py / 8;
-        // Only full 8×8 blocks (skip partial blocks at edges)
-        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-            block_set.insert((bx, by));
+    let block_set = if path_pixels.is_empty() {
+        // Fallback: no skeleton (solid colors, logos) → PRNG scatter
+        prng_blocks(img, iw, ih)
+    } else {
+        // Normal path: skeleton-guided blocks
+        let mut set = std::collections::HashSet::new();
+        for (px, py) in &path_pixels {
+            let bx = px / 8;
+            let by = py / 8;
+            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                set.insert((bx, by));
+            }
         }
-    }
+        set
+    };
 
     let n_blocks = block_set.len() as u64;
 
     for (bx, by) in &block_set {
         let ox = bx * 8;
         let oy = by * 8;
-
-        // Process each RGB channel independently
         for ch in 0..3usize {
             let mut block = extract_block(img, ox, oy, ch);
             dct8x8_forward(&mut block);
-            // Additive modulation: always +delta (fixed sign → detectable asymmetry)
             block[TARGET_U][TARGET_V] += EMBED_DELTA;
             dct8x8_inverse(&mut block);
             write_block(img, ox, oy, ch, &block);
@@ -328,6 +331,90 @@ fn collect_path_pixels(geometry: &GeometryFile, iw: u32, ih: u32) -> Vec<(u32, u
         }
     }
     out
+}
+
+// ─── PRNG fallback for solid-color / zero-path images ────────────────────────
+
+/// Generate a deterministic pseudorandom set of 8×8 block coordinates for use
+/// when the skeleton extractor produces no paths (solid colors, logos, flat UIs).
+///
+/// The seed is derived from a fast hash of the image pixel data, so the same
+/// image always produces the same block set — making verification reproducible
+/// without storing explicit path geometry.
+///
+/// Target coverage: ~5% of all 8×8 blocks (similar to skeleton density for
+/// natural images at detail=60).
+pub fn prng_blocks(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    iw: u32,
+    ih: u32,
+) -> std::collections::HashSet<(u32, u32)> {
+    // Hash the first 4096 bytes of pixel data as the PRNG seed.
+    // Enough to be image-specific without reading the full buffer.
+    let raw = img.as_raw();
+    let sample = &raw[..raw.len().min(4096)];
+    let seed = fnv1a_hash(sample);
+
+    let total_bx = iw / 8;
+    let total_by = ih / 8;
+    let total_blocks = total_bx * total_by;
+    // Target ~5% of available blocks, minimum 32
+    let target = ((total_blocks as f64 * 0.05).round() as u32).max(32).min(total_blocks);
+
+    let mut set = std::collections::HashSet::new();
+    let mut state = seed;
+    // LCG: simple, deterministic, dependency-free
+    while set.len() < target as usize {
+        state = lcg_next(state);
+        let bx = ((state >> 32) as u32) % total_bx;
+        let by = (state as u32) % total_by;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            set.insert((bx, by));
+        }
+    }
+    set
+}
+
+/// FNV-1a 64-bit hash — fast, dependency-free.
+fn fnv1a_hash(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x00000100000001b3);
+    }
+    h
+}
+
+/// LCG with Knuth's constants — reproducible across platforms.
+fn lcg_next(state: u64) -> u64 {
+    state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+}
+
+/// Compute the PRNG seed for an image (used for verification without geometry).
+pub fn image_seed(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> u64 {
+    let raw = img.as_raw();
+    let sample = &raw[..raw.len().min(4096)];
+    fnv1a_hash(sample)
+}
+
+/// Regenerate PRNG blocks from a seed (for verification).
+pub fn prng_blocks_from_seed(seed: u64, iw: u32, ih: u32) -> std::collections::HashSet<(u32, u32)> {
+    let total_bx = iw / 8;
+    let total_by = ih / 8;
+    let total_blocks = total_bx * total_by;
+    let target = ((total_blocks as f64 * 0.05).round() as u32).max(32).min(total_blocks);
+
+    let mut set = std::collections::HashSet::new();
+    let mut state = seed;
+    while set.len() < target as usize {
+        state = lcg_next(state);
+        let bx = ((state >> 32) as u32) % total_bx;
+        let by = (state as u32) % total_by;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            set.insert((bx, by));
+        }
+    }
+    set
 }
 
 fn bresenham<F>(x0: i32, y0: i32, x1: i32, y1: i32, max_x: i32, max_y: i32, mut emit: F)

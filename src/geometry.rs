@@ -20,6 +20,11 @@ pub struct GeometryFile {
     pub analysis_params: AnalysisParams,
     /// Extracted polyline paths
     pub paths: Vec<PathEntry>,
+    /// PRNG seed derived from original image pixels (FNV-1a of first 4096 bytes).
+    /// Set when paths is empty (solid-color fallback) so verification can
+    /// reconstruct the same pseudorandom block set without re-hashing a modified image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prng_seed: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
