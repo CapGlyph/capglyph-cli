@@ -13,7 +13,12 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
 /// Core embed logic (also called by batch module).
 pub fn embed(args: &EmbedArgs) -> Result<()> {
     // ── 1. Resolve output path ────────────────────────────────────────────────
-    let default_ext = if args.output.as_ref().map(|p| p.extension().and_then(|e| e.to_str())) == Some(Some("jpg")) {
+    let default_ext = if args
+        .output
+        .as_ref()
+        .map(|p| p.extension().and_then(|e| e.to_str()))
+        == Some(Some("jpg"))
+    {
         "jpg"
     } else {
         "png"
@@ -65,7 +70,7 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             let src_rgba = src_img.to_rgba8();
             let wm_layer = render_watermark(&geometry, orig_w, orig_h, args.stroke)?;
             let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
-            
+
             if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
                 // Convert to RGB and save as JPEG
                 let rgb = image::DynamicImage::ImageRgba8(result).to_rgb8();
@@ -85,20 +90,35 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             // Preserve original alpha channel if the source has one.
             // DCT operates only on RGB; alpha must be copied back to output.
             let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
-                Some(
-                    src_img
-                        .to_rgba8()
-                        .pixels()
-                        .map(|p| p[3])
-                        .collect(),
-                )
+                Some(src_img.to_rgba8().pixels().map(|p| p[3]).collect())
             } else {
                 None
             };
 
             let mut rgb = src_img.to_rgb8();
-            let n_blocks = crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
-            let rid_note = args.recipient_id.as_deref()
+            let (n_blocks, blocks) =
+                crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
+
+            // If recipient_id is provided, update geometry with blocks for extraction
+            let mut geometry_with_blocks = geometry.clone();
+            if args.recipient_id.is_some() {
+                geometry_with_blocks.blocks = Some(blocks);
+                // Re-save geometry file if it was originally saved
+                if let Some(ref save_path) = args.save_geometry {
+                    info!(
+                        "Updating geometry file with block coordinates: {:?}",
+                        save_path
+                    );
+                    let json = geometry_with_blocks.to_json()?;
+                    std::fs::write(save_path, &json).with_context(|| {
+                        format!("Failed to update geometry file: {:?}", save_path)
+                    })?;
+                }
+            }
+
+            let rid_note = args
+                .recipient_id
+                .as_deref()
                 .map(|id| format!(" recipient={id}"))
                 .unwrap_or_default();
 
@@ -128,7 +148,10 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             }
         }
         EmbedMode::Dwt => {
-            info!("Mode: dwt  strength={}", crate::dwt_embed::DWT_EMBED_STRENGTH);
+            info!(
+                "Mode: dwt  strength={}",
+                crate::dwt_embed::DWT_EMBED_STRENGTH
+            );
             let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
                 Some(src_img.to_rgba8().pixels().map(|p| p[3]).collect())
             } else {
@@ -192,7 +215,7 @@ pub fn extract_and_build_geometry(
 ) -> Result<GeometryFile> {
     // Convert RgbImage to DynamicImage for extract_geometry
     let dyn_img = image::DynamicImage::ImageRgb8(rgb.clone());
-    
+
     // Build temporary EmbedArgs
     let args = EmbedArgs {
         input: std::path::PathBuf::from("dummy.png"),
@@ -207,7 +230,7 @@ pub fn extract_and_build_geometry(
         from_geometry: None,
         recipient_id: params.recipient_id.clone(),
     };
-    
+
     extract_geometry(&dyn_img, width, height, &args)
 }
 
@@ -280,6 +303,7 @@ fn extract_geometry(
         },
         paths,
         prng_seed,
+        blocks: None,
     })
 }
 
@@ -447,7 +471,12 @@ fn merge_rgb_alpha(rgb: &image::RgbImage, alphas: &[u8], w: u32, h: u32) -> imag
 }
 
 /// Composite RGB + alpha over a white background → flat RGB (for JPEG output).
-fn composite_rgb_over_white(rgb: &image::RgbImage, alphas: &[u8], w: u32, h: u32) -> image::RgbImage {
+fn composite_rgb_over_white(
+    rgb: &image::RgbImage,
+    alphas: &[u8],
+    w: u32,
+    h: u32,
+) -> image::RgbImage {
     image::RgbImage::from_fn(w, h, |x, y| {
         let p = rgb.get_pixel(x, y);
         let a = alphas[(y * w + x) as usize] as f32 / 255.0;
@@ -463,11 +492,13 @@ fn save_as_jpeg(rgb: &image::RgbImage, path: &Path, quality: u8) -> Result<()> {
     let mut file = std::fs::File::create(path)
         .with_context(|| format!("Failed to create JPEG output: {:?}", path))?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, quality);
-    encoder.encode(
-        rgb,
-        rgb.width(),
-        rgb.height(),
-        image::ExtendedColorType::Rgb8,
-    ).with_context(|| format!("Failed to encode JPEG: {:?}", path))?;
+    encoder
+        .encode(
+            rgb,
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .with_context(|| format!("Failed to encode JPEG: {:?}", path))?;
     Ok(())
 }

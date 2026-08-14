@@ -16,8 +16,7 @@ pub fn batch(args: &BatchArgs) -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output_dir)
-        .context("Failed to create output directory")?;
+    std::fs::create_dir_all(&args.output_dir).context("Failed to create output directory")?;
 
     println!("Processing {} images...", paths.len());
 
@@ -32,14 +31,23 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
     let mut failed = 0;
 
     for (i, input) in paths.iter().enumerate() {
-        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let stem = input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
         let ext = match args.format {
             OutputFormat::Png => "png",
             OutputFormat::Jpg => "jpg",
         };
         let output = args.output_dir.join(format!("{}_sigil.{}", stem, ext));
 
-        print!("[{}/{}] {} → {} ... ", i + 1, paths.len(), input.display(), output.display());
+        print!(
+            "[{}/{}] {} → {} ... ",
+            i + 1,
+            paths.len(),
+            input.display(),
+            output.display()
+        );
 
         let embed_args = EmbedArgs {
             input: input.clone(),
@@ -75,7 +83,10 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
         }
     }
 
-    println!("\nBatch embed complete: {} success, {} failed", success, failed);
+    println!(
+        "\nBatch embed complete: {} success, {} failed",
+        success, failed
+    );
     Ok(())
 }
 
@@ -84,10 +95,19 @@ fn batch_strip(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
     let mut failed = 0;
 
     for (i, input) in paths.iter().enumerate() {
-        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let stem = input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
         let output = args.output_dir.join(format!("{}_stripped.png", stem));
 
-        print!("[{}/{}] {} → {} ... ", i + 1, paths.len(), input.display(), output.display());
+        print!(
+            "[{}/{}] {} → {} ... ",
+            i + 1,
+            paths.len(),
+            input.display(),
+            output.display()
+        );
 
         let strip_args = StripArgs {
             input: input.clone(),
@@ -106,17 +126,20 @@ fn batch_strip(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
         }
     }
 
-    println!("\nBatch strip complete: {} success, {} failed", success, failed);
+    println!(
+        "\nBatch strip complete: {} success, {} failed",
+        success, failed
+    );
     Ok(())
 }
 
 fn convert_to_jpeg(png_path: &Path, quality: u8) -> Result<()> {
     let img = image::open(png_path)?;
     let rgb = img.to_rgb8();
-    
+
     // Replace .png with .jpg
     let jpg_path = png_path.with_extension("jpg");
-    
+
     // Save as JPEG
     let mut jpg_file = std::fs::File::create(&jpg_path)?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg_file, quality);
@@ -126,9 +149,9 @@ fn convert_to_jpeg(png_path: &Path, quality: u8) -> Result<()> {
         rgb.height(),
         image::ExtendedColorType::Rgb8,
     )?;
-    
+
     // Remove intermediate PNG
     std::fs::remove_file(png_path)?;
-    
+
     Ok(())
 }

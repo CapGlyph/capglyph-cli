@@ -25,6 +25,11 @@ pub struct GeometryFile {
     /// reconstruct the same pseudorandom block set without re-hashing a modified image.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prng_seed: Option<u64>,
+    /// Exact sorted 8×8 block coordinates used during DCT embed (for recipient ID extraction).
+    /// Stored as (block_x, block_y) tuples. When present, `extract` uses these directly
+    /// instead of re-deriving blocks from paths (which may differ after watermarking).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<Vec<(u32, u32)>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

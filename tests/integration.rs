@@ -229,6 +229,7 @@ fn geometry_json_roundtrip() {
             },
         ],
         prng_seed: None,
+        blocks: None,
     };
 
     let json = geo.to_json().unwrap();
@@ -264,8 +265,8 @@ fn signal_metrics_full_for_opaque_rgba() {
     let mut pixels = vec![0u8; 64 * 64 * 4];
     for chunk in pixels.chunks_exact_mut(4) {
         chunk[0] = 255; // R
-        chunk[1] = 0;   // G
-        chunk[2] = 0;   // B
+        chunk[1] = 0; // G
+        chunk[2] = 0; // B
         chunk[3] = 255; // A
     }
     let m = SignalMetrics::compute(&pixels, 64, 64);
@@ -338,7 +339,9 @@ fn dct_watermark_degrades_at_jpeg_q50() {
     // JPEG q50 round-trip
     let img = image::open(&output).unwrap();
     let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(
-        std::fs::File::create(&jpeg).unwrap(), 50);
+        std::fs::File::create(&jpeg).unwrap(),
+        50,
+    );
     enc.encode_image(&img).unwrap();
     image::open(&jpeg).unwrap().save(&reloaded).unwrap();
 
@@ -426,7 +429,7 @@ fn dct_preserves_alpha_channel() {
     }
     let total = (w * h) as usize;
     let alpha_preservation = alpha_match as f32 / total as f32;
-    
+
     assert!(
         alpha_preservation > 0.99,
         "Alpha channel should be preserved ({}% match)",
@@ -473,7 +476,7 @@ fn strip_composites_transparent_over_white() {
             let expected_r = (a * op[0] as f32 + (1.0 - a) * 255.0).round() as u8;
             let expected_g = (a * op[1] as f32 + (1.0 - a) * 255.0).round() as u8;
             let expected_b = (a * op[2] as f32 + (1.0 - a) * 255.0).round() as u8;
-            
+
             if sp[0] == expected_r && sp[1] == expected_g && sp[2] == expected_b {
                 correct_composite += 1;
             }
@@ -481,7 +484,7 @@ fn strip_composites_transparent_over_white() {
     }
     let total = (w * h) as usize;
     let composite_accuracy = correct_composite as f32 / total as f32;
-    
+
     assert!(
         composite_accuracy > 0.99,
         "Strip should composite over white ({}% correct)",
@@ -518,7 +521,10 @@ fn dwt_watermark_embed_and_verify() {
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
-    assert!(present, "DWT watermark should be detectable after embedding");
+    assert!(
+        present,
+        "DWT watermark should be detectable after embedding"
+    );
 }
 
 #[test]
@@ -621,4 +627,54 @@ fn dwt_watermark_survives_scale() {
     };
     let present = verify::run(&verify_args).unwrap();
     assert!(present, "DWT watermark should survive 0.75× scaling");
+}
+
+#[test]
+fn recipient_id_roundtrip() {
+    use sigil::cli::{EmbedArgs, EmbedMode, ExtractArgs};
+    use sigil::{embed, extract};
+
+    let tmp = TempDir::new().unwrap();
+    // Use a 512×512 checkerboard to generate plenty of skeleton blocks.
+    // A 13-char ID needs 13×8×5 = 520 blocks; a 512×512 checkerboard gives ~2000+.
+    let input = tmp.path().join("large_input.png");
+    let img = image::RgbImage::from_fn(512, 512, |x, y| {
+        let cell_x = x / 4;
+        let cell_y = y / 4;
+        if (cell_x + cell_y) % 2 == 0 {
+            image::Rgb([255u8, 255, 255])
+        } else {
+            image::Rgb([0u8, 0, 0])
+        }
+    });
+    img.save(&input).unwrap();
+
+    let output = tmp.path().join("watermarked.png");
+    let geo_path = tmp.path().join("geo.json");
+
+    // Embed with recipient ID
+    let embed_args = EmbedArgs {
+        input: input.clone(),
+        output: Some(output.clone()),
+        mode: EmbedMode::Dct,
+        stroke: 0.010,
+        detail: 60,
+        min_path_len: 5,
+        chaikin_iters: 3,
+        color: false,
+        save_geometry: Some(geo_path.clone()),
+        from_geometry: None,
+        recipient_id: Some("test_user_123".to_string()),
+    };
+    embed::run(&embed_args).unwrap();
+
+    // Extract recipient ID
+    let extract_args = ExtractArgs {
+        input: output,
+        mode: EmbedMode::Dct,
+        geometry: Some(geo_path),
+        id_length: 13,
+    };
+    let extracted = extract::run(&extract_args).unwrap();
+    assert_eq!(extracted, "test_user_123");
 }

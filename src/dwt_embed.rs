@@ -175,8 +175,7 @@ fn collect_embed_positions(
     let band_h = img_h / 2;
 
     // Build position set from path geometry (scale to LH band dimensions)
-    let mut positions: std::collections::HashSet<(u32, u32)> =
-        std::collections::HashSet::new();
+    let mut positions: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
 
     for path in &geometry.paths {
         for point in &path.points {
@@ -223,11 +222,7 @@ fn fnv1a_hash(s: &str) -> u64 {
 fn extract_channel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, ch: usize) -> Vec<Vec<f32>> {
     let (w, h) = img.dimensions();
     (0..h)
-        .map(|y| {
-            (0..w)
-                .map(|x| img.get_pixel(x, y)[ch] as f32)
-                .collect()
-        })
+        .map(|y| (0..w).map(|x| img.get_pixel(x, y)[ch] as f32).collect())
         .collect()
 }
 
@@ -271,6 +266,7 @@ mod tests {
                 points,
             }],
             prng_seed: Some(0),
+            blocks: None,
         }
     }
 

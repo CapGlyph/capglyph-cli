@@ -53,6 +53,8 @@ pub enum Commands {
     Info(InfoArgs),
     /// Batch-process multiple images (embed or strip)
     Batch(BatchArgs),
+    /// Extract embedded recipient ID from watermarked image
+    Extract(ExtractArgs),
 }
 
 // ─── embed ───────────────────────────────────────────────────────────────────
@@ -215,4 +217,24 @@ pub enum BatchOperation {
 pub enum OutputFormat {
     Png,
     Jpg,
+}
+
+// ─── extract ─────────────────────────────────────────────────────────────────
+
+#[derive(Args, Debug)]
+pub struct ExtractArgs {
+    /// Watermarked image to extract recipient ID from
+    pub input: PathBuf,
+
+    /// Watermark mode (must match embed mode: alpha/dct/dwt)
+    #[arg(short, long, value_enum, default_value_t = EmbedMode::Dct)]
+    pub mode: EmbedMode,
+
+    /// Optional geometry file (speeds up extraction; auto-extracted if omitted)
+    #[arg(short, long)]
+    pub geometry: Option<PathBuf>,
+
+    /// Expected recipient ID length in characters (for bit extraction)
+    #[arg(short = 'l', long, default_value_t = 16)]
+    pub id_length: usize,
 }

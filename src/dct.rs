@@ -33,10 +33,18 @@ use image::{ImageBuffer, Rgb};
 /// u=2, v=3 is a mid-frequency position: large enough to survive JPEG quantization
 /// at quality≥50, but not so high that it gets zeroed at quality=75.
 /// Spatial domain max change ≈ delta * cos(5π/16) * cos(7π/16) / 4 ≈ delta * 0.11
-const TARGET_U: usize = 2;
-const TARGET_V: usize = 3;
+pub const TARGET_U: usize = 2;
+pub const TARGET_V: usize = 3;
 
-/// Additive delta applied to the target DCT coefficient.
+/// Second DCT coefficient used for spread-spectrum recipient ID encoding.
+/// (U=3, V=4) is adjacent to TARGET but distinct — separated to avoid interference.
+pub const ID_TARGET_U: usize = 3;
+pub const ID_TARGET_V: usize = 4;
+
+/// Embedding strength for recipient ID bits in DCT coefficient (3,4).
+/// Uses differential pair encoding: bit=1 → (A+delta, B-delta), bit=0 → (A-delta, B+delta)
+/// where A and B are two consecutive blocks.
+pub const ID_EMBED_DELTA: f32 = 64.0;
 /// JPEG quantization step at quality=75 for this frequency ≈ 8–12.
 /// delta=16 → survives quality≥50; spatial change ≈ 1.8/255 → invisible.
 pub const EMBED_DELTA: f32 = 16.0;
@@ -49,18 +57,21 @@ pub const VERIFY_THRESHOLD: f32 = 8.0;
 
 /// Embed DCT-domain watermark along skeleton paths.
 ///
-/// Modifies `img` in-place. Returns the number of 8×8 blocks watermarked.
+/// Modifies `img` in-place. Returns (number of 8×8 blocks watermarked, sorted block coordinates).
 ///
 /// When the skeleton has no paths (solid-color images, logos), falls back to
 /// PRNG scatter: pseudorandom block selection seeded by image pixel hash.
 /// This ensures all image types can be watermarked.
 ///
 /// `recipient_id`: Optional string mixed into PRNG seed for per-recipient tracking.
+///
+/// The returned `Vec<(u32, u32)>` contains the exact sorted block coordinates used during embed,
+/// which must be stored in the geometry file for accurate recipient ID extraction.
 pub fn embed(
     img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
-) -> Result<u64> {
+) -> Result<(u64, Vec<(u32, u32)>)> {
     let (iw, ih) = img.dimensions();
 
     // Collect all skeleton pixels via Bresenham
@@ -84,19 +95,80 @@ pub fn embed(
 
     let n_blocks = block_set.len() as u64;
 
-    for (bx, by) in &block_set {
-        let ox = bx * 8;
-        let oy = by * 8;
-        for ch in 0..3usize {
-            let mut block = extract_block(img, ox, oy, ch);
-            dct8x8_forward(&mut block);
-            block[TARGET_U][TARGET_V] += EMBED_DELTA;
-            dct8x8_inverse(&mut block);
-            write_block(img, ox, oy, ch, &block);
+    // Convert blocks to sorted vec for deterministic ordering
+    let mut blocks: Vec<_> = block_set.into_iter().collect();
+    blocks.sort_unstable();
+
+    // Embed primary watermark + spread-spectrum recipient ID if provided
+    if let Some(id_str) = recipient_id {
+        let id_bits = crate::spread_spectrum::str_to_bits(id_str);
+        let redundancy = crate::spread_spectrum::REDUNDANCY;
+        let bits_needed = id_bits.len() * redundancy;
+
+        if blocks.len() >= bits_needed {
+            // Embed both primary watermark and ID bits
+            for (i, &(bx, by)) in blocks.iter().enumerate() {
+                let ox = bx * 8;
+                let oy = by * 8;
+
+                // Determine ID bit for this block (if within range)
+                let id_delta = if i < bits_needed {
+                    let bit_idx = i / redundancy;
+                    if id_bits[bit_idx] {
+                        ID_EMBED_DELTA
+                    } else {
+                        -ID_EMBED_DELTA
+                    }
+                } else {
+                    0.0
+                };
+
+                for ch in 0..3usize {
+                    let mut block = extract_block(img, ox, oy, ch);
+                    dct8x8_forward(&mut block);
+                    block[TARGET_U][TARGET_V] += EMBED_DELTA;
+                    if id_delta != 0.0 {
+                        block[ID_TARGET_U][ID_TARGET_V] += id_delta;
+                    }
+                    dct8x8_inverse(&mut block);
+                    write_block(img, ox, oy, ch, &block);
+                }
+            }
+        } else {
+            // Not enough blocks — embed primary watermark only and warn
+            tracing::warn!(
+                "Insufficient blocks ({}) for ID embedding (need {}). Embedding primary watermark only.",
+                blocks.len(),
+                bits_needed
+            );
+            for &(bx, by) in &blocks {
+                let ox = bx * 8;
+                let oy = by * 8;
+                for ch in 0..3usize {
+                    let mut block = extract_block(img, ox, oy, ch);
+                    dct8x8_forward(&mut block);
+                    block[TARGET_U][TARGET_V] += EMBED_DELTA;
+                    dct8x8_inverse(&mut block);
+                    write_block(img, ox, oy, ch, &block);
+                }
+            }
+        }
+    } else {
+        // No recipient ID — embed primary watermark only
+        for &(bx, by) in &blocks {
+            let ox = bx * 8;
+            let oy = by * 8;
+            for ch in 0..3usize {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[TARGET_U][TARGET_V] += EMBED_DELTA;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
+            }
         }
     }
 
-    Ok(n_blocks)
+    Ok((n_blocks, blocks))
 }
 
 /// Metrics from DCT-domain verification.
@@ -250,7 +322,11 @@ fn dct8(x: &[f32; 8]) -> [f32; 8] {
     const N: f32 = 8.0;
     let mut out = [0.0f32; 8];
     for (k, out_k) in out.iter_mut().enumerate() {
-        let alpha = if k == 0 { 1.0 / N.sqrt() } else { (2.0 / N).sqrt() };
+        let alpha = if k == 0 {
+            1.0 / N.sqrt()
+        } else {
+            (2.0 / N).sqrt()
+        };
         let sum: f32 = x
             .iter()
             .enumerate()
@@ -273,9 +349,12 @@ fn idct8(x: &[f32; 8]) -> [f32; 8] {
             .iter()
             .enumerate()
             .map(|(k, &xk)| {
-                let alpha = if k == 0 { 1.0 / N.sqrt() } else { (2.0 / N).sqrt() };
-                alpha * xk
-                    * (std::f32::consts::PI * k as f32 * (2.0 * n as f32 + 1.0) / 16.0).cos()
+                let alpha = if k == 0 {
+                    1.0 / N.sqrt()
+                } else {
+                    (2.0 / N).sqrt()
+                };
+                alpha * xk * (std::f32::consts::PI * k as f32 * (2.0 * n as f32 + 1.0) / 16.0).cos()
             })
             .sum();
         *out_n = sum;
@@ -367,7 +446,9 @@ pub fn prng_blocks(
     let total_by = ih / 8;
     let total_blocks = total_bx * total_by;
     // Target ~5% of available blocks, minimum 32
-    let target = ((total_blocks as f64 * 0.05).round() as u32).max(32).min(total_blocks);
+    let target = ((total_blocks as f64 * 0.05).round() as u32)
+        .max(32)
+        .min(total_blocks);
 
     let mut set = std::collections::HashSet::new();
     let mut state = seed;
@@ -395,7 +476,9 @@ fn fnv1a_hash(data: &[u8]) -> u64 {
 
 /// LCG with Knuth's constants — reproducible across platforms.
 fn lcg_next(state: u64) -> u64 {
-    state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+    state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
 }
 
 /// Compute the PRNG seed for an image (used for verification without geometry).
@@ -410,7 +493,9 @@ pub fn prng_blocks_from_seed(seed: u64, iw: u32, ih: u32) -> std::collections::H
     let total_bx = iw / 8;
     let total_by = ih / 8;
     let total_blocks = total_bx * total_by;
-    let target = ((total_blocks as f64 * 0.05).round() as u32).max(32).min(total_blocks);
+    let target = ((total_blocks as f64 * 0.05).round() as u32)
+        .max(32)
+        .min(total_blocks);
 
     let mut set = std::collections::HashSet::new();
     let mut state = seed;

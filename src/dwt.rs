@@ -69,8 +69,8 @@ fn haar_1d_forward(data: &mut [f32]) {
     for i in 0..half {
         let a = data[2 * i];
         let b = data[2 * i + 1];
-        temp[i] = (a + b) / 2.0_f32.sqrt();         // Approximation (low-pass)
-        temp[half + i] = (a - b) / 2.0_f32.sqrt();  // Detail (high-pass)
+        temp[i] = (a + b) / 2.0_f32.sqrt(); // Approximation (low-pass)
+        temp[half + i] = (a - b) / 2.0_f32.sqrt(); // Detail (high-pass)
     }
 
     data.copy_from_slice(&temp);
@@ -202,7 +202,12 @@ mod tests {
         haar_1d_inverse(&mut data);
 
         for (a, b) in original.iter().zip(data.iter()) {
-            assert!((a - b).abs() < 1e-5, "Perfect reconstruction failed: {} vs {}", a, b);
+            assert!(
+                (a - b).abs() < 1e-5,
+                "Perfect reconstruction failed: {} vs {}",
+                a,
+                b
+            );
         }
     }
 

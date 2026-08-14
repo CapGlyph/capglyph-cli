@@ -24,10 +24,15 @@ fn info_alpha(img: &DynamicImage, w: u32, h: u32) -> Result<()> {
     println!("Mode:                      alpha");
     println!("Image size:                {}×{} ({} pixels)", w, h, w * h);
     println!("Alpha channel statistics:");
-    println!("  Semi-transparent pixels: {} ({:.4}%)",
-             metrics.semi_transparent_count,
-             metrics.semi_transparent_frac * 100.0);
-    println!("  Alpha mean/max:          {:.1}/{}", metrics.alpha_mean, metrics.alpha_max);
+    println!(
+        "  Semi-transparent pixels: {} ({:.4}%)",
+        metrics.semi_transparent_count,
+        metrics.semi_transparent_frac * 100.0
+    );
+    println!(
+        "  Alpha mean/max:          {:.1}/{}",
+        metrics.alpha_mean, metrics.alpha_max
+    );
     println!("  Nonzero alpha count:     {}", metrics.nonzero_alpha_count);
     println!("  Composite MAE:           {:.3}", metrics.composite_mae);
 
@@ -71,8 +76,9 @@ fn info_dct(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) ->
     println!("Mean skeleton offset: {:.3}", metrics.mean_offset);
     println!("Mean baseline offset: {:.3}", metrics.baseline_mean_offset);
     println!("Signal strength:      {:.3}", metrics.signal_strength);
-    
-    let detection_rate = metrics.watermarked_blocks as f64 / metrics.total_skeleton_blocks.max(1) as f64;
+
+    let detection_rate =
+        metrics.watermarked_blocks as f64 / metrics.total_skeleton_blocks.max(1) as f64;
     println!("Detection rate:       {:.1}%", detection_rate * 100.0);
 
     if detection_rate > 0.5 {
@@ -113,7 +119,10 @@ fn info_dwt(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) ->
     println!("Total coefficients:   {}", metrics.total_coefficients);
     println!("Detected coefficients: {}", metrics.detected_count);
     println!("Mean signal:          {:.3}", metrics.mean_signal);
-    println!("Detection rate:       {:.1}%", metrics.detection_rate * 100.0);
+    println!(
+        "Detection rate:       {:.1}%",
+        metrics.detection_rate * 100.0
+    );
 
     if metrics.detection_rate > 0.5 {
         println!("\n✓ DWT watermark signal detected (likely watermarked)");

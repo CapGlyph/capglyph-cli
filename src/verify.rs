@@ -44,7 +44,9 @@ fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
             let (w, h) = (img.width(), img.height());
             println!(
                 "  image:  {}×{} — no alpha channel (colour type: {:?})",
-                w, h, img.color()
+                w,
+                h,
+                img.color()
             );
             println!("  reason: format has no alpha channel (RGB/JPG/stripped)");
         }
@@ -118,10 +120,12 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 
         if path_pixels.is_empty() {
             // Solid-color fallback: use stored PRNG seed from geometry file
-            let seed = geom.prng_seed.ok_or_else(|| anyhow::anyhow!(
-                "No skeleton paths and no PRNG seed in geometry file. \
+            let seed = geom.prng_seed.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No skeleton paths and no PRNG seed in geometry file. \
                  Re-embed with current Sigil version to generate a seed."
-            ))?;
+                )
+            })?;
             crate::dct::prng_blocks_from_seed(seed, iw, ih)
         } else {
             let mut set = HashSet::new();
@@ -138,7 +142,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         // New path: re-extract skeleton from watermarked image
         info!("No geometry file provided, re-extracting skeleton from image");
         let geom = extract_geometry_from_image(img)?;
-        
+
         let mut path_pixels = HashSet::new();
         for path in &geom.paths {
             for point in &path.points {
@@ -188,7 +192,11 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         if args.verbose {
             println!("  mode:      dct");
             println!("  image:     {}×{}", iw, ih);
-            println!("  blocks:    {} total, {} sampled", skeleton_blocks.len(), sample_size);
+            println!(
+                "  blocks:    {} total, {} sampled",
+                skeleton_blocks.len(),
+                sample_size
+            );
             println!("  coeff:     F[{},{}]", u, v);
             println!(
                 "  detection: {}/{} ({:.1}%)",
@@ -203,7 +211,11 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         if args.verbose {
             println!("  mode:      dct");
             println!("  image:     {}×{}", iw, ih);
-            println!("  blocks:    {} total, {} sampled", skeleton_blocks.len(), sample_size);
+            println!(
+                "  blocks:    {} total, {} sampled",
+                skeleton_blocks.len(),
+                sample_size
+            );
             println!("  coeff:     F[{},{}]", u, v);
             println!(
                 "  detection: {}/{} ({:.1}%)",
@@ -224,8 +236,7 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         Some(p) => {
             let json = std::fs::read_to_string(p)
                 .with_context(|| format!("Failed to read geometry file: {:?}", p))?;
-            serde_json::from_str::<GeometryFile>(&json)
-                .context("Failed to parse geometry JSON")?
+            serde_json::from_str::<GeometryFile>(&json).context("Failed to parse geometry JSON")?
         }
         None => {
             info!("No geometry file — re-extracting skeleton from image");
@@ -263,7 +274,9 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 }
 /// Uses the same vectomancy raster pipeline as embed, with default params.
 /// Accuracy may be slightly lower than using the saved geometry file.
-fn extract_geometry_from_image(img: &image::DynamicImage) -> Result<crate::geometry::GeometryFile> {
+pub fn extract_geometry_from_image(
+    img: &image::DynamicImage,
+) -> Result<crate::geometry::GeometryFile> {
     use crate::geometry::{AnalysisParams, GeometryFile, PathEntry};
     use vectomancy_geometry::{chaikin_smooth_points, simplify_rdp};
     use vectomancy_raster::decode_raster_memory;
@@ -307,5 +320,6 @@ fn extract_geometry_from_image(img: &image::DynamicImage) -> Result<crate::geome
         },
         paths,
         prng_seed: None,
+        blocks: None,
     })
 }
