@@ -54,7 +54,13 @@ pub const VERIFY_THRESHOLD: f32 = 8.0;
 /// When the skeleton has no paths (solid-color images, logos), falls back to
 /// PRNG scatter: pseudorandom block selection seeded by image pixel hash.
 /// This ensures all image types can be watermarked.
-pub fn embed(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, geometry: &GeometryFile) -> Result<u64> {
+///
+/// `recipient_id`: Optional string mixed into PRNG seed for per-recipient tracking.
+pub fn embed(
+    img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
+    geometry: &GeometryFile,
+    recipient_id: Option<&str>,
+) -> Result<u64> {
     let (iw, ih) = img.dimensions();
 
     // Collect all skeleton pixels via Bresenham
@@ -62,7 +68,7 @@ pub fn embed(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, geometry: &GeometryFile) -
 
     let block_set = if path_pixels.is_empty() {
         // Fallback: no skeleton (solid colors, logos) → PRNG scatter
-        prng_blocks(img, iw, ih)
+        prng_blocks(img, iw, ih, recipient_id)
     } else {
         // Normal path: skeleton-guided blocks
         let mut set = std::collections::HashSet::new();
@@ -348,12 +354,14 @@ pub fn prng_blocks(
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     iw: u32,
     ih: u32,
+    recipient_id: Option<&str>,
 ) -> std::collections::HashSet<(u32, u32)> {
-    // Hash the first 4096 bytes of pixel data as the PRNG seed.
-    // Enough to be image-specific without reading the full buffer.
     let raw = img.as_raw();
     let sample = &raw[..raw.len().min(4096)];
-    let seed = fnv1a_hash(sample);
+    let mut seed = fnv1a_hash(sample);
+    if let Some(id) = recipient_id {
+        seed ^= fnv1a_hash(id.as_bytes());
+    }
 
     let total_bx = iw / 8;
     let total_by = ih / 8;

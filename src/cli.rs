@@ -95,6 +95,12 @@ pub struct EmbedArgs {
     /// Load geometry from a previously saved JSON file (skips re-analysis)
     #[arg(long, conflicts_with_all = ["detail", "min_path_len", "chaikin_iters", "color"])]
     pub from_geometry: Option<PathBuf>,
+
+    /// Recipient ID for per-recipient tracking watermarks.
+    /// Different IDs produce different watermarks on the same image — useful for
+    /// identifying which recipient leaked a copy. The ID is mixed into the PRNG seed.
+    #[arg(long)]
+    pub recipient_id: Option<String>,
 }
 
 // ─── verify ──────────────────────────────────────────────────────────────────
@@ -109,8 +115,9 @@ pub struct VerifyArgs {
     #[arg(long, default_value = "alpha")]
     pub mode: EmbedMode,
 
-    /// Geometry file required for DCT verification (same file used during embed).
-    #[arg(long, required_if_eq("mode", "dct"))]
+    /// Optional geometry file for DCT verification (improves accuracy).
+    /// If omitted, geometry is re-extracted from the watermarked image.
+    #[arg(long)]
     pub geometry: Option<PathBuf>,
 
     /// Alpha nonzero-pixel fraction threshold (alpha mode only, default: 0.0001)

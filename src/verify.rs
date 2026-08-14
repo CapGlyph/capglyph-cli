@@ -85,54 +85,84 @@ fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 
 /// DCT-domain verification: check if marked blocks still have offset in target coefficient.
 fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
-    let geometry_path = args.geometry.as_ref().context(
-        "DCT verification requires --geometry <file.json> (same file used during embed)",
-    )?;
-
-    let geom: GeometryFile = {
-        let s = std::fs::read_to_string(geometry_path)
-            .with_context(|| format!("Failed to read geometry: {:?}", geometry_path))?;
-        serde_json::from_str(&s)
-            .with_context(|| format!("Failed to parse geometry JSON: {:?}", geometry_path))?
-    };
-
-    anyhow::ensure!(
-        geom.version == 1,
-        "Unsupported geometry format version: {}",
-        geom.version
-    );
-
     let rgb = img.to_rgb8();
     let (iw, ih) = rgb.dimensions();
 
-    // Identify blocks: skeleton-guided if paths exist, PRNG fallback otherwise
-    let mut path_pixels = HashSet::new();
-    for path in &geom.paths {
-        for point in &path.points {
-            let (x, y) = (point[0], point[1]);
-            if x >= 0.0 && y >= 0.0 {
-                path_pixels.insert((x as u32, y as u32));
-            }
-        }
-    }
+    // Determine block set: from geometry file (if provided) or re-extract skeleton
+    let skeleton_blocks: HashSet<(u32, u32)> = if let Some(geometry_path) = &args.geometry {
+        // Legacy path: use provided geometry file
+        let geom: GeometryFile = {
+            let s = std::fs::read_to_string(geometry_path)
+                .with_context(|| format!("Failed to read geometry: {:?}", geometry_path))?;
+            serde_json::from_str(&s)
+                .with_context(|| format!("Failed to parse geometry JSON: {:?}", geometry_path))?
+        };
 
-    let skeleton_blocks: HashSet<(u32, u32)> = if path_pixels.is_empty() {
-        // Solid-color fallback: use stored PRNG seed from geometry file
-        let seed = geom.prng_seed.ok_or_else(|| anyhow::anyhow!(
-            "No skeleton paths and no PRNG seed in geometry file. \
-             Re-embed with current Sigil version to generate a seed."
-        ))?;
-        crate::dct::prng_blocks_from_seed(seed, iw, ih)
-    } else {
-        let mut set = HashSet::new();
-        for (px, py) in &path_pixels {
-            let bx = px / 8;
-            let by = py / 8;
-            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                set.insert((bx, by));
+        anyhow::ensure!(
+            geom.version == 1,
+            "Unsupported geometry format version: {}",
+            geom.version
+        );
+
+        // Identify blocks from stored paths
+        let mut path_pixels = HashSet::new();
+        for path in &geom.paths {
+            for point in &path.points {
+                let (x, y) = (point[0], point[1]);
+                if x >= 0.0 && y >= 0.0 {
+                    path_pixels.insert((x as u32, y as u32));
+                }
             }
         }
-        set
+
+        if path_pixels.is_empty() {
+            // Solid-color fallback: use stored PRNG seed from geometry file
+            let seed = geom.prng_seed.ok_or_else(|| anyhow::anyhow!(
+                "No skeleton paths and no PRNG seed in geometry file. \
+                 Re-embed with current Sigil version to generate a seed."
+            ))?;
+            crate::dct::prng_blocks_from_seed(seed, iw, ih)
+        } else {
+            let mut set = HashSet::new();
+            for (px, py) in &path_pixels {
+                let bx = px / 8;
+                let by = py / 8;
+                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                    set.insert((bx, by));
+                }
+            }
+            set
+        }
+    } else {
+        // New path: re-extract skeleton from watermarked image
+        info!("No geometry file provided, re-extracting skeleton from image");
+        let geom = extract_geometry_from_image(img)?;
+        
+        let mut path_pixels = HashSet::new();
+        for path in &geom.paths {
+            for point in &path.points {
+                let (x, y) = (point[0], point[1]);
+                if x >= 0.0 && y >= 0.0 {
+                    path_pixels.insert((x as u32, y as u32));
+                }
+            }
+        }
+
+        if path_pixels.is_empty() {
+            // Solid-color image: use PRNG with image hash as seed
+            let seed = crate::dct::image_seed(&rgb);
+            crate::dct::prng_blocks_from_seed(seed, iw, ih)
+        } else {
+            let mut set = HashSet::new();
+            for (px, py) in &path_pixels {
+                let bx = px / 8;
+                let by = py / 8;
+                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                    set.insert((bx, by));
+                }
+            }
+            set
+        }
     };
 
     // Sample blocks: check how many still have the marker coefficient offset
@@ -185,4 +215,54 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     }
 
     Ok(present)
+}
+
+/// Re-extract skeleton geometry from a (potentially watermarked) image.
+/// Uses the same vectomancy raster pipeline as embed, with default params.
+/// Accuracy may be slightly lower than using the saved geometry file.
+fn extract_geometry_from_image(img: &image::DynamicImage) -> Result<crate::geometry::GeometryFile> {
+    use crate::geometry::{AnalysisParams, GeometryFile, PathEntry};
+    use vectomancy_geometry::{chaikin_smooth_points, simplify_rdp};
+    use vectomancy_raster::decode_raster_memory;
+
+    let mut buf = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .context("Failed to re-encode image for geometry extraction")?;
+
+    let (raw_paths, _) = decode_raster_memory(&buf, false)
+        .map_err(|e| anyhow::anyhow!("Raster decode failed: {}", e))?;
+
+    let tolerance = 1.5;
+    let min_len = 5;
+    let chaikin = 2;
+
+    let mut paths: Vec<PathEntry> = Vec::new();
+    for sp in raw_paths {
+        if sp.geometry.points.len() < min_len {
+            continue;
+        }
+        let simp = simplify_rdp(&sp.geometry.points, tolerance);
+        if simp.len() < 2 {
+            continue;
+        }
+        let smooth = chaikin_smooth_points(&simp, chaikin, false);
+        paths.push(PathEntry {
+            color: None,
+            points: smooth.iter().map(|p| [p.x, p.y]).collect(),
+        });
+    }
+
+    Ok(GeometryFile {
+        version: GeometryFile::CURRENT_VERSION,
+        original_width: img.width(),
+        original_height: img.height(),
+        analysis_params: AnalysisParams {
+            detail: 60,
+            min_path_len: min_len,
+            chaikin_iters: chaikin,
+            color: false,
+        },
+        paths,
+        prng_seed: None,
+    })
 }

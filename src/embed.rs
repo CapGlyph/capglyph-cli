@@ -30,6 +30,16 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
         extract_geometry(&src_img, orig_w, orig_h, args)?
     };
 
+    // ── 3a. Warn if path count is very low ────────────────────────────────────
+    let path_count = geometry.paths.len();
+    if path_count < 50 {
+        eprintln!(
+            "⚠️  WARNING: Only {} paths extracted. Watermark may be weak or easily removed.",
+            path_count
+        );
+        eprintln!("    Consider lowering --detail or --min-path-len for richer geometry.");
+    }
+
     // ── 4. Optionally persist geometry ────────────────────────────────────────
     if let Some(ref save_path) = args.save_geometry {
         info!("Saving geometry to: {:?}", save_path);
@@ -54,14 +64,16 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
         EmbedMode::Dct => {
             info!("Mode: dct  delta={}", crate::dct::EMBED_DELTA);
             let mut rgb = src_img.to_rgb8();
-            let n_blocks = crate::dct::embed(&mut rgb, &geometry)?;
-            // Save as RGBA so verify can still load it; alpha is all 255 (fully opaque)
+            let n_blocks = crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
             let rgba = image::DynamicImage::ImageRgb8(rgb).to_rgba8();
             rgba.save(&output_path)
                 .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+            let rid_note = args.recipient_id.as_deref()
+                .map(|id| format!(" recipient={id}"))
+                .unwrap_or_default();
             println!(
-                "Watermark embedded [dct, {} blocks] → {:?}",
-                n_blocks, output_path
+                "Watermark embedded [dct, {} blocks{}] → {:?}",
+                n_blocks, rid_note, output_path
             );
         }
     }

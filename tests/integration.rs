@@ -42,6 +42,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         color: false,
         save_geometry: None,
         from_geometry: None,
+        recipient_id: None,
     }
 }
 
@@ -166,6 +167,7 @@ fn from_geometry_matches_full_run() {
         color: false,
         stroke: 0.010,
         save_geometry: None,
+        recipient_id: None,
     })
     .unwrap();
 
