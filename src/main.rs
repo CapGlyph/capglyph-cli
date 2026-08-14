@@ -3,7 +3,7 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 use sigil::cli::{Cli, Commands};
-use sigil::{embed, strip, verify};
+use sigil::{batch, embed, info, strip, verify};
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -26,6 +26,8 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Strip(args) => strip::run(args)?,
+        Commands::Info(args) => info::info(args)?,
+        Commands::Batch(args) => batch::batch(args)?,
     }
 
     Ok(())

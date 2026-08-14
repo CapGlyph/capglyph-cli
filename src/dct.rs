@@ -465,9 +465,9 @@ mod tests {
     fn dct_roundtrip() {
         let mut block = [[0.0f32; 8]; 8];
         // Fill with arbitrary values
-        for r in 0..8 {
-            for c in 0..8 {
-                block[r][c] = ((r * 17 + c * 31) % 200) as f32;
+        for (r, row) in block.iter_mut().enumerate() {
+            for (c, cell) in row.iter_mut().enumerate() {
+                *cell = ((r * 17 + c * 31) % 200) as f32;
             }
         }
         let original = block;
@@ -492,9 +492,9 @@ mod tests {
     fn dct_perturbation_is_invisible() {
         let mut block_orig = [[128.0f32; 8]; 8];
         // Slight variation so DC isn't the only component
-        for r in 0..8 {
-            for c in 0..8 {
-                block_orig[r][c] = 100.0 + (r * 5 + c * 3) as f32;
+        for (r, row) in block_orig.iter_mut().enumerate() {
+            for (c, cell) in row.iter_mut().enumerate() {
+                *cell = 100.0 + (r * 5 + c * 3) as f32;
             }
         }
         let mut block_wm = block_orig;

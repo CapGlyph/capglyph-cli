@@ -3,7 +3,6 @@
 /// Each test generates a small synthetic PNG in-process (no fixture files needed)
 /// and runs the subcommand logic directly via the public module functions.
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use tempfile::TempDir;
 
 // ── Synthetic test fixture ────────────────────────────────────────────────────

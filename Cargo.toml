@@ -38,6 +38,9 @@ tiny-skia = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Glob pattern matching for batch operations
+glob = "0.3"
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -7,8 +7,18 @@ use crate::geometry::{AnalysisParams, GeometryFile, PathEntry};
 
 /// Entry point for the `embed` subcommand.
 pub fn run(args: &EmbedArgs) -> Result<()> {
+    embed(args)
+}
+
+/// Core embed logic (also called by batch module).
+pub fn embed(args: &EmbedArgs) -> Result<()> {
     // ── 1. Resolve output path ────────────────────────────────────────────────
-    let output_path = resolve_output(&args.input, args.output.as_deref(), "_sigil", "png");
+    let default_ext = if args.output.as_ref().map(|p| p.extension().and_then(|e| e.to_str())) == Some(Some("jpg")) {
+        "jpg"
+    } else {
+        "png"
+    };
+    let output_path = resolve_output(&args.input, args.output.as_deref(), "_sigil", default_ext);
 
     // ── 2. Load the source image ──────────────────────────────────────────────
     info!("Loading input image: {:?}", args.input);
@@ -55,26 +65,46 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
             let src_rgba = src_img.to_rgba8();
             let wm_layer = render_watermark(&geometry, orig_w, orig_h, args.stroke)?;
             let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
-            info!("Saving output to: {:?}", output_path);
-            result
-                .save(&output_path)
-                .with_context(|| format!("Failed to save output: {:?}", output_path))?;
-            println!("Watermark embedded [alpha] → {:?}", output_path);
+            
+            if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
+                // Convert to RGB and save as JPEG
+                let rgb = image::DynamicImage::ImageRgba8(result).to_rgb8();
+                save_as_jpeg(&rgb, &output_path, 85)?;
+                println!("Watermark embedded [alpha→jpg] → {:?}", output_path);
+            } else {
+                // Save as PNG
+                info!("Saving output to: {:?}", output_path);
+                result
+                    .save(&output_path)
+                    .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+                println!("Watermark embedded [alpha] → {:?}", output_path);
+            }
         }
         EmbedMode::Dct => {
             info!("Mode: dct  delta={}", crate::dct::EMBED_DELTA);
             let mut rgb = src_img.to_rgb8();
             let n_blocks = crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
-            let rgba = image::DynamicImage::ImageRgb8(rgb).to_rgba8();
-            rgba.save(&output_path)
-                .with_context(|| format!("Failed to save output: {:?}", output_path))?;
             let rid_note = args.recipient_id.as_deref()
                 .map(|id| format!(" recipient={id}"))
                 .unwrap_or_default();
-            println!(
-                "Watermark embedded [dct, {} blocks{}] → {:?}",
-                n_blocks, rid_note, output_path
-            );
+            
+            if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
+                // Save directly as JPEG
+                save_as_jpeg(&rgb, &output_path, 85)?;
+                println!(
+                    "Watermark embedded [dct→jpg, {} blocks{}] → {:?}",
+                    n_blocks, rid_note, output_path
+                );
+            } else {
+                // Save as PNG
+                let rgba = image::DynamicImage::ImageRgb8(rgb).to_rgba8();
+                rgba.save(&output_path)
+                    .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+                println!(
+                    "Watermark embedded [dct, {} blocks{}] → {:?}",
+                    n_blocks, rid_note, output_path
+                );
+            }
         }
     }
 
@@ -82,6 +112,43 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Geometry extraction parameters.
+pub struct GeometryParams {
+    pub detail: u8,
+    pub min_path_len: usize,
+    pub chaikin_iters: usize,
+    pub color: bool,
+    pub recipient_id: Option<String>,
+}
+
+/// Public wrapper for geometry extraction (used by info command).
+pub fn extract_and_build_geometry(
+    rgb: &image::RgbImage,
+    width: u32,
+    height: u32,
+    params: &GeometryParams,
+) -> Result<GeometryFile> {
+    // Convert RgbImage to DynamicImage for extract_geometry
+    let dyn_img = image::DynamicImage::ImageRgb8(rgb.clone());
+    
+    // Build temporary EmbedArgs
+    let args = EmbedArgs {
+        input: std::path::PathBuf::from("dummy.png"),
+        output: None,
+        mode: crate::cli::EmbedMode::Dct,
+        stroke: 0.010,
+        detail: params.detail,
+        min_path_len: params.min_path_len,
+        chaikin_iters: params.chaikin_iters,
+        color: params.color,
+        save_geometry: None,
+        from_geometry: None,
+        recipient_id: params.recipient_id.clone(),
+    };
+    
+    extract_geometry(&dyn_img, width, height, &args)
+}
 
 /// Run the vectomancy-raster pipeline and apply Chaikin smoothing.
 fn extract_geometry(
@@ -307,4 +374,18 @@ pub fn resolve_output(input: &Path, override_: Option<&Path>, suffix: &str, ext:
     let stem = input.file_stem().unwrap_or_default().to_string_lossy();
     let parent = input.parent().unwrap_or(Path::new("."));
     parent.join(format!("{}{}.{}", stem, suffix, ext))
+}
+
+/// Save an RGB image as JPEG with the given quality (10–100).
+fn save_as_jpeg(rgb: &image::RgbImage, path: &Path, quality: u8) -> Result<()> {
+    let mut file = std::fs::File::create(path)
+        .with_context(|| format!("Failed to create JPEG output: {:?}", path))?;
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, quality);
+    encoder.encode(
+        rgb,
+        rgb.width(),
+        rgb.height(),
+        image::ExtendedColorType::Rgb8,
+    ).with_context(|| format!("Failed to encode JPEG: {:?}", path))?;
+    Ok(())
 }

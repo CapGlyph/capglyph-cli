@@ -46,6 +46,10 @@ pub enum Commands {
     Verify(VerifyArgs),
     /// Remove the watermark layer from an image (produces clean RGB PNG)
     Strip(StripArgs),
+    /// Show signal statistics without verification (no pass/fail threshold)
+    Info(InfoArgs),
+    /// Batch-process multiple images (embed or strip)
+    Batch(BatchArgs),
 }
 
 // ─── embed ───────────────────────────────────────────────────────────────────
@@ -56,6 +60,7 @@ pub struct EmbedArgs {
     pub input: PathBuf,
 
     /// Output path (default: <stem>_sigil.png next to input)
+    /// For JPEG output, use --output file.jpg or --format jpg in batch mode
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
@@ -139,4 +144,72 @@ pub struct StripArgs {
     /// Output path (default: <stem>_stripped.png)
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+}
+
+// ─── info ────────────────────────────────────────────────────────────────────
+
+#[derive(Args, Debug)]
+pub struct InfoArgs {
+    /// Input image path
+    pub input: PathBuf,
+
+    /// Detection mode (alpha or dct)
+    #[arg(long, default_value = "alpha")]
+    pub mode: EmbedMode,
+
+    /// Optional geometry file for DCT mode (if not provided, re-extracts from image)
+    #[arg(long)]
+    pub geometry: Option<PathBuf>,
+}
+
+// ─── batch ───────────────────────────────────────────────────────────────────
+
+#[derive(Args, Debug)]
+pub struct BatchArgs {
+    /// Operation: embed or strip
+    #[arg(value_enum)]
+    pub operation: BatchOperation,
+
+    /// Input pattern (glob, e.g., "./images/*.png")
+    pub input_pattern: String,
+
+    /// Output directory (created if missing)
+    #[arg(short, long)]
+    pub output_dir: PathBuf,
+
+    /// Embedding mode for batch embed (alpha or dct)
+    #[arg(long, default_value = "alpha")]
+    pub mode: EmbedMode,
+
+    /// Output format for batch embed: png or jpg
+    #[arg(long, default_value = "png")]
+    pub format: OutputFormat,
+
+    /// JPEG quality (10-100) when format=jpg
+    #[arg(long, default_value_t = 85)]
+    pub jpeg_quality: u8,
+
+    /// Stroke width for batch embed
+    #[arg(long, default_value_t = 0.010)]
+    pub stroke: f32,
+
+    /// Detail level for batch embed
+    #[arg(long, default_value_t = 60)]
+    pub detail: u8,
+
+    /// Recipient ID for batch embed (same for all images in batch)
+    #[arg(long)]
+    pub recipient_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum BatchOperation {
+    Embed,
+    Strip,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Png,
+    Jpg,
 }
