@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::cli::EmbedArgs;
+use crate::cli::{EmbedArgs, EmbedMode};
 use crate::geometry::{AnalysisParams, GeometryFile, PathEntry};
 
 /// Entry point for the `embed` subcommand.
@@ -15,7 +15,6 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
     let src_img = image::open(&args.input)
         .with_context(|| format!("Failed to open input image: {:?}", args.input))?;
     let (orig_w, orig_h) = (src_img.width(), src_img.height());
-    let src_rgba = src_img.to_rgba8();
 
     // ── 3. Obtain geometry (analyse or load from file) ────────────────────────
     let geometry = if let Some(ref geo_path) = args.from_geometry {
@@ -39,21 +38,34 @@ pub fn run(args: &EmbedArgs) -> Result<()> {
             .with_context(|| format!("Failed to write geometry file: {:?}", save_path))?;
     }
 
-    // ── 5. Render watermark layer ─────────────────────────────────────────────
-    info!("Rendering watermark layer (stroke={}px)", args.stroke);
-    let wm_layer = render_watermark(&geometry, orig_w, orig_h, args.stroke)?;
+    // ── 5. Embed via selected mode ────────────────────────────────────────────
+    match args.mode {
+        EmbedMode::Alpha => {
+            info!("Mode: alpha  stroke={}px", args.stroke);
+            let src_rgba = src_img.to_rgba8();
+            let wm_layer = render_watermark(&geometry, orig_w, orig_h, args.stroke)?;
+            let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
+            info!("Saving output to: {:?}", output_path);
+            result
+                .save(&output_path)
+                .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+            println!("Watermark embedded [alpha] → {:?}", output_path);
+        }
+        EmbedMode::Dct => {
+            info!("Mode: dct  delta={}", crate::dct::EMBED_DELTA);
+            let mut rgb = src_img.to_rgb8();
+            let n_blocks = crate::dct::embed(&mut rgb, &geometry)?;
+            // Save as RGBA so verify can still load it; alpha is all 255 (fully opaque)
+            let rgba = image::DynamicImage::ImageRgb8(rgb).to_rgba8();
+            rgba.save(&output_path)
+                .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+            println!(
+                "Watermark embedded [dct, {} blocks] → {:?}",
+                n_blocks, output_path
+            );
+        }
+    }
 
-    // ── 6. Composite watermark over original ──────────────────────────────────
-    info!("Compositing watermark over original image");
-    let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
-
-    // ── 7. Save output ────────────────────────────────────────────────────────
-    info!("Saving output to: {:?}", output_path);
-    result
-        .save(&output_path)
-        .with_context(|| format!("Failed to save output: {:?}", output_path))?;
-
-    println!("Watermark embedded → {:?}", output_path);
     Ok(())
 }
 
@@ -122,83 +134,106 @@ fn extract_geometry(
     })
 }
 
-/// Render geometry paths onto a transparent RGBA canvas at the given stroke width.
+/// Render geometry paths onto a transparent RGBA canvas.
 ///
-/// Uses tiny-skia for software anti-aliased rasterization.
-/// Sub-pixel stroke widths (e.g. 0.002px) produce fractional coverage per pixel,
-/// which manifests as low-alpha pixels — the "invisible ink" signal.
+/// Uses sparse Bresenham pixel marking instead of continuous stroke AA, mimicking
+/// the wgpu 4×MSAA sparse-coverage behaviour:
+///   - Only path centerline pixels are marked (Bresenham rasterisation)
+///   - Coverage is sub-sampled to ~0.05% of total pixels → isolated scattered dots
+///   - Each marked pixel gets a high embed_alpha (proportional to stroke_width)
+///   - Result: sparse, isolated pixels invisible to humans; detectable by VLMs
 ///
-/// Returns a straight-alpha RGBA image.
+/// wgpu reference:    α_nonzero≈0.033%, α_max≈193, MAE≈0.017  (at 0.010px)
+/// This renderer:     α_nonzero≈0.04%,  α_max≈180, MAE≈0.020  (at 0.010px, target)
 fn render_watermark(
     geometry: &GeometryFile,
     width: u32,
     height: u32,
     stroke_width: f32,
 ) -> Result<image::RgbaImage> {
-    use tiny_skia::{Paint, PathBuilder, Pixmap, Stroke, Transform};
+    // embed_alpha: high value (like wgpu's ~193) so individual pixels are detectable
+    // scale proportional to stroke_width so the user can tune signal strength
+    let embed_alpha = (stroke_width * 18_000.0).round().clamp(30.0, 220.0) as u8;
 
-    // tiny-skia renders to premultiplied RGBA
-    let mut pixmap = Pixmap::new(width, height)
-        .ok_or_else(|| anyhow::anyhow!("Failed to allocate {}×{} pixmap", width, height))?;
-
-    let stroke = Stroke {
-        width: stroke_width,
-        ..Default::default()
-    };
+    // Target coverage ≈ 0.05% of pixels (similar to vectomancy wgpu at 0.005–0.010px)
+    let total_pixels = width as u64 * height as u64;
+    let target_marked: u64 = (total_pixels as f64 * 0.0005).round().max(100.0) as u64;
 
     let neutral_gray = [0.5f32, 0.5, 0.5];
+
+    // ── Step 1: rasterise all paths via Bresenham, collect (x, y, r, g, b) ─────
+    let mut path_pixels: Vec<(i32, i32, u8, u8, u8)> = Vec::new();
 
     for path_entry in &geometry.paths {
         if path_entry.points.len() < 2 {
             continue;
         }
-
-        // Build the path
-        let mut builder = PathBuilder::new();
-        let first = &path_entry.points[0];
-        builder.move_to(first[0] as f32, first[1] as f32);
-        for pt in &path_entry.points[1..] {
-            builder.line_to(pt[0] as f32, pt[1] as f32);
-        }
-        let skia_path = match builder.finish() {
-            Some(p) => p,
-            None => continue,
-        };
-
-        // Paint color
         let [r, g, b] = path_entry.color.unwrap_or(neutral_gray);
-        let mut paint = Paint::default();
-        paint.set_color(
-            tiny_skia::Color::from_rgba(r, g, b, 1.0)
-                .unwrap_or(tiny_skia::Color::from_rgba(0.5, 0.5, 0.5, 1.0).unwrap()),
-        );
-        paint.anti_alias = true;
+        let pr = (r * 255.0).round().clamp(0.0, 255.0) as u8;
+        let pg = (g * 255.0).round().clamp(0.0, 255.0) as u8;
+        let pb = (b * 255.0).round().clamp(0.0, 255.0) as u8;
 
-        pixmap.stroke_path(&skia_path, &paint, &stroke, Transform::identity(), None);
+        for win in path_entry.points.windows(2) {
+            let (x0, y0) = (win[0][0].round() as i32, win[0][1].round() as i32);
+            let (x1, y1) = (win[1][0].round() as i32, win[1][1].round() as i32);
+            bresenham(x0, y0, x1, y1, width as i32, height as i32, |x, y| {
+                path_pixels.push((x, y, pr, pg, pb));
+            });
+        }
     }
 
-    // tiny-skia produces premultiplied RGBA; convert to straight alpha for `image`.
-    // premult: R_p = R_s * A / 255  →  straight: R_s = R_p * 255 / A
-    let raw = pixmap.data(); // &[u8], RGBA premultiplied, row-major
-    let mut out = image::RgbaImage::new(width, height);
-    for (i, chunk) in raw.chunks_exact(4).enumerate() {
-        let x = (i as u32) % width;
-        let y = (i as u32) / width;
-        let (rp, gp, bp, a) = (chunk[0], chunk[1], chunk[2], chunk[3]);
-        let (rs, gs, bs) = if a == 0 {
-            (0u8, 0u8, 0u8)
-        } else {
-            let af = a as u16;
-            (
-                ((rp as u16 * 255 + af / 2) / af).min(255) as u8,
-                ((gp as u16 * 255 + af / 2) / af).min(255) as u8,
-                ((bp as u16 * 255 + af / 2) / af).min(255) as u8,
-            )
-        };
-        out.put_pixel(x, y, image::Rgba([rs, gs, bs, a]));
+    // ── Step 2: sub-sample to hit the coverage target ────────────────────────
+    let mut pixmap = image::RgbaImage::new(width, height);
+
+    if path_pixels.is_empty() {
+        return Ok(pixmap);
     }
 
-    Ok(out)
+    // Uniform stride: keep every N-th pixel
+    let stride = ((path_pixels.len() as u64).max(1) as f64 / target_marked as f64)
+        .round()
+        .max(1.0) as usize;
+
+    for (i, &(x, y, pr, pg, pb)) in path_pixels.iter().enumerate() {
+        if i % stride == 0 {
+            pixmap.put_pixel(x as u32, y as u32, image::Rgba([pr, pg, pb, embed_alpha]));
+        }
+    }
+
+    Ok(pixmap)
+}
+
+/// Bresenham integer line rasterisation.
+/// Calls `emit(x, y)` for every pixel on the segment [(x0,y0)..(x1,y1)]
+/// that falls within [0, max_x) × [0, max_y).
+fn bresenham<F>(x0: i32, y0: i32, x1: i32, y1: i32, max_x: i32, max_y: i32, mut emit: F)
+where
+    F: FnMut(i32, i32),
+{
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+    let sx = if x0 < x1 { 1i32 } else { -1 };
+    let sy = if y0 < y1 { 1i32 } else { -1 };
+    let mut err = dx - dy;
+    let (mut x, mut y) = (x0, y0);
+
+    loop {
+        if x >= 0 && y >= 0 && x < max_x && y < max_y {
+            emit(x, y);
+        }
+        if x == x1 && y == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 > -dy {
+            err -= dy;
+            x += sx;
+        }
+        if e2 < dx {
+            err += dx;
+            y += sy;
+        }
+    }
 }
 
 /// Alpha-composite `watermark` OVER `base`.
@@ -221,15 +256,11 @@ fn composite(
         let composite_r = (wa * w[0] as f32 + (1.0 - wa) * b[0] as f32).round() as u8;
         let composite_g = (wa * w[1] as f32 + (1.0 - wa) * b[1] as f32).round() as u8;
         let composite_b = (wa * w[2] as f32 + (1.0 - wa) * b[2] as f32).round() as u8;
-        // Alpha channel carries the watermark signal.
-        // For opaque originals (b[3]=255), we deliberately use the watermark
-        // alpha as the output alpha — this makes the signal visible to VLMs
-        // via alpha channel inspection while keeping RGB ≈ original (the
-        // watermark RGB contribution is scaled by its tiny alpha).
-        // When composited over white in an image viewer, the result looks
-        // identical to the original. PNG→JPG conversion drops this alpha
-        // channel entirely, which is how tampering is detected.
-        let composite_a = w[3];
+        // Alpha: path pixels carry the signal (embed_alpha < 255 = semi-transparent).
+        // Non-path pixels (w[3]==0) stay at original alpha (255 for RGB sources).
+        // verify detects the watermark by counting semi-transparent pixels (0 < α < 255).
+        // PNG→JPG drops the alpha channel entirely → all pixels become fully opaque → absent.
+        let composite_a = if w[3] > 0 { w[3] } else { b[3] };
         *out_px = image::Rgba([composite_r, composite_g, composite_b, composite_a]);
     }
     out

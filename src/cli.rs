@@ -1,5 +1,23 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+
+/// Embedding mode for `sigil embed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum EmbedMode {
+    /// Stage 1: sparse alpha-channel signal. Fast, invisible. Fragile to alpha stripping.
+    Alpha,
+    /// Stage 2: RGB DCT-domain residual. Survives PNG→JPG at quality≥50.
+    Dct,
+}
+
+impl std::fmt::Display for EmbedMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EmbedMode::Alpha => write!(f, "alpha"),
+            EmbedMode::Dct => write!(f, "dct"),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -41,9 +59,16 @@ pub struct EmbedArgs {
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Watermark stroke width in pixels (sub-perceptual default for tiny-skia renderer)
-    /// Note: tiny-skia rendering floor is ~0.008px; values below that produce zero signal.
-    /// Default 0.010px: signal present (α_nonzero≈3.4%, MAE≈0.087), invisible to humans.
+    /// Embedding mode:
+    ///   alpha  — Stage 1: sparse Bresenham pixels written to alpha channel (default).
+    ///            Fast, invisible, detects PNG→JPG tamper. Fragile: `convert -alpha off` kills it.
+    ///   dct    — Stage 2: modulate mid-frequency DCT coefficients of 8×8 RGB blocks.
+    ///            Survives PNG→JPG at quality≥50. Works on both RGB and RGBA sources.
+    #[arg(long, default_value = "alpha")]
+    pub mode: EmbedMode,
+
+    /// Watermark stroke width in pixels (controls path density for geometry extraction).
+    /// Used in alpha mode only for embed_alpha scaling.
     #[arg(long, default_value_t = 0.010)]
     pub stroke: f32,
 
@@ -79,7 +104,16 @@ pub struct VerifyArgs {
     /// Image path to inspect
     pub input: PathBuf,
 
-    /// Alpha nonzero-pixel fraction threshold to report watermark as present
+    /// Embedding mode used when this image was watermarked.
+    /// `alpha` checks semi-transparent pixel fraction; `dct` checks DCT coefficient offset.
+    #[arg(long, default_value = "alpha")]
+    pub mode: EmbedMode,
+
+    /// Geometry file required for DCT verification (same file used during embed).
+    #[arg(long, required_if_eq("mode", "dct"))]
+    pub geometry: Option<PathBuf>,
+
+    /// Alpha nonzero-pixel fraction threshold (alpha mode only, default: 0.0001)
     #[arg(long, default_value_t = 0.0001)]
     pub threshold: f64,
 

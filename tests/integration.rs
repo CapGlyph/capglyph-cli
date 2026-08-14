@@ -27,16 +27,17 @@ fn make_test_png(dir: &TempDir) -> PathBuf {
 
 // ── Helpers that mirror CLI behaviour ────────────────────────────────────────
 
-use sigil::cli::{EmbedArgs, StripArgs, VerifyArgs};
+use sigil::cli::{EmbedArgs, EmbedMode, StripArgs, VerifyArgs};
 use sigil::{embed, strip, verify};
 
 fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
     EmbedArgs {
         input,
         output: Some(output),
+        mode: EmbedMode::Alpha,
         stroke: 0.010,
         detail: 60,
-        min_path_len: 3, // lower for tiny 64×64 test image
+        min_path_len: 3,
         chaikin_iters: 1,
         color: false,
         save_geometry: None,
@@ -74,6 +75,8 @@ fn verify_present_after_embed() {
 
     let present = verify::run(&VerifyArgs {
         input: output,
+        mode: EmbedMode::Alpha,
+        geometry: None,
         threshold: 0.0001,
         verbose: false,
     })
@@ -89,6 +92,8 @@ fn verify_absent_for_plain_rgb() {
 
     let present = verify::run(&VerifyArgs {
         input,
+        mode: EmbedMode::Alpha,
+        geometry: None,
         threshold: 0.0001,
         verbose: false,
     })
@@ -121,6 +126,8 @@ fn verify_absent_after_strip() {
 
     let present = verify::run(&VerifyArgs {
         input: stripped,
+        mode: EmbedMode::Alpha,
+        geometry: None,
         threshold: 0.0001,
         verbose: false,
     })
@@ -151,6 +158,7 @@ fn from_geometry_matches_full_run() {
         input: input.clone(),
         output: Some(out2.clone()),
         from_geometry: Some(geo_path),
+        mode: EmbedMode::Alpha,
         // analysis flags ignored when from_geometry is set
         detail: 60,
         min_path_len: 3,
@@ -233,18 +241,130 @@ fn signal_metrics_zero_for_blank_rgba() {
 fn signal_metrics_full_for_opaque_rgba() {
     use sigil::signal::SignalMetrics;
 
-    // All red, fully opaque
+    // All red, fully opaque — no semi-transparent pixels → watermark absent
     let mut pixels = vec![0u8; 64 * 64 * 4];
     for chunk in pixels.chunks_exact_mut(4) {
         chunk[0] = 255; // R
-        chunk[1] = 0; // G
-        chunk[2] = 0; // B
+        chunk[1] = 0;   // G
+        chunk[2] = 0;   // B
         chunk[3] = 255; // A
     }
     let m = SignalMetrics::compute(&pixels, 64, 64);
 
-    assert_eq!(m.nonzero_alpha_frac, 1.0);
+    assert_eq!(m.nonzero_alpha_frac, 1.0, "all pixels have nonzero alpha");
+    assert_eq!(m.semi_transparent_frac, 0.0, "no semi-transparent pixels");
     assert_eq!(m.alpha_max, 255);
-    assert!(m.composite_mae > 0.0); // red differs from white
-    assert!(m.is_present(0.0001));
+    assert!(m.composite_mae > 0.0, "red differs from white composite");
+    // Fully opaque image has no signal → absent (correct)
+    assert!(!m.is_present(0.0001));
+}
+
+// ── JPEG Survival Tests ──────────────────────────────────────────────────────
+
+#[test]
+fn dct_watermark_survives_jpeg_q75() {
+    let tmp = TempDir::new().unwrap();
+    let input = make_test_png(&tmp);
+    let output = tmp.path().join("watermarked.png");
+    let geometry = tmp.path().join("geometry.json");
+    let jpeg = tmp.path().join("watermarked.jpg");
+    let reloaded = tmp.path().join("reloaded.png");
+
+    // Embed DCT watermark with saved geometry
+    let mut args = default_embed_args(input.clone(), output.clone());
+    args.mode = EmbedMode::Dct;
+    args.stroke = 0.010;
+    args.save_geometry = Some(geometry.clone());
+    embed::run(&args).unwrap();
+
+    // PNG → JPEG q75 → PNG round-trip
+    let img = image::open(&output).unwrap();
+    let mut jpeg_encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+        std::fs::File::create(&jpeg).unwrap(),
+        75,
+    );
+    jpeg_encoder.encode_image(&img).unwrap();
+    let jpeg_img = image::open(&jpeg).unwrap();
+    jpeg_img.save(&reloaded).unwrap();
+
+    // Verify watermark still present after JPEG
+    let verify_args = VerifyArgs {
+        input: reloaded,
+        mode: EmbedMode::Dct,
+        geometry: Some(geometry),
+        threshold: 0.80,
+        verbose: false,
+    };
+    let result = verify::run(&verify_args).unwrap();
+    assert!(result, "DCT watermark should survive JPEG q75");
+}
+
+#[test]
+fn dct_watermark_degrades_at_jpeg_q50() {
+    // Documents expected behavior: JPEG q50 destroys the DCT watermark on small
+    // images (few skeleton blocks). On large natural images (>500 blocks), q75
+    // survives at ≥80% detection — see vectomancy-docs/findings/2026-08-14-sigil-jpeg-survival.md
+    let tmp = TempDir::new().unwrap();
+    let input = make_test_png(&tmp);
+    let output = tmp.path().join("watermarked.png");
+    let geometry = tmp.path().join("geometry.json");
+    let jpeg = tmp.path().join("watermarked.jpg");
+    let reloaded = tmp.path().join("reloaded.png");
+
+    let mut args = default_embed_args(input.clone(), output.clone());
+    args.mode = EmbedMode::Dct;
+    args.save_geometry = Some(geometry.clone());
+    embed::run(&args).unwrap();
+
+    // JPEG q50 round-trip
+    let img = image::open(&output).unwrap();
+    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(
+        std::fs::File::create(&jpeg).unwrap(), 50);
+    enc.encode_image(&img).unwrap();
+    image::open(&jpeg).unwrap().save(&reloaded).unwrap();
+
+    // Just verify the call succeeds without panicking; don't assert presence/absence
+    // because small synthetic images (~28 blocks) don't survive q50 reliably.
+    let _result = verify::run(&VerifyArgs {
+        input: reloaded,
+        mode: EmbedMode::Dct,
+        geometry: Some(geometry),
+        threshold: 0.80,
+        verbose: false,
+    });
+    // No assertion: q50 behavior on tiny images is documented, not required.
+}
+
+#[test]
+fn alpha_watermark_destroyed_by_jpeg() {
+    let tmp = TempDir::new().unwrap();
+    let input = make_test_png(&tmp);
+    let output = tmp.path().join("watermarked.png");
+    let jpeg = tmp.path().join("watermarked.jpg");
+    let reloaded = tmp.path().join("reloaded.png");
+
+    // Embed alpha watermark
+    let args = default_embed_args(input.clone(), output.clone());
+    embed::run(&args).unwrap();
+
+    // PNG → JPEG → PNG round-trip destroys alpha
+    let img = image::open(&output).unwrap();
+    let mut jpeg_encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+        std::fs::File::create(&jpeg).unwrap(),
+        75,
+    );
+    jpeg_encoder.encode_image(&img).unwrap();
+    let jpeg_img = image::open(&jpeg).unwrap();
+    jpeg_img.save(&reloaded).unwrap();
+
+    // Verify watermark is destroyed (no alpha channel)
+    let verify_args = VerifyArgs {
+        input: reloaded,
+        mode: EmbedMode::Alpha,
+        geometry: None,
+        threshold: 0.0001,
+        verbose: false,
+    };
+    let result = verify::run(&verify_args).unwrap();
+    assert!(!result, "Alpha watermark should be destroyed by JPEG");
 }

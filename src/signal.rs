@@ -10,6 +10,10 @@ pub struct SignalMetrics {
     pub nonzero_alpha_count: u64,
     /// Fraction of pixels with alpha > 0
     pub nonzero_alpha_frac: f64,
+    /// Number of pixels where 0 < alpha < 255 (semi-transparent = watermark signal)
+    pub semi_transparent_count: u64,
+    /// Fraction of semi-transparent pixels
+    pub semi_transparent_frac: f64,
     /// Mean alpha value across all pixels (0.0–255.0)
     pub alpha_mean: f64,
     /// Maximum alpha value observed (0–255)
@@ -33,6 +37,7 @@ impl SignalMetrics {
 
         let total = (width as u64) * (height as u64);
         let mut nonzero: u64 = 0;
+        let mut semi: u64 = 0;
         let mut alpha_sum: u64 = 0;
         let mut alpha_max: u8 = 0;
         let mut mae_sum: f64 = 0.0;
@@ -48,20 +53,21 @@ impl SignalMetrics {
             if a > 0 {
                 nonzero += 1;
             }
+            if a > 0 && a < 255 {
+                semi += 1;
+            }
             alpha_sum += a as u64;
             if a > alpha_max {
                 alpha_max = a;
             }
             alpha_hist[a as usize] += 1;
 
-            // Composite over white: out = alpha * color + (1 - alpha) * 255
             let cr = af * r + (1.0 - af) * 255.0;
             let cg = af * g + (1.0 - af) * 255.0;
             let cb = af * b + (1.0 - af) * 255.0;
             mae_sum += (255.0 - cr + (255.0 - cg) + (255.0 - cb)) / 3.0;
         }
 
-        // p99: smallest alpha value a such that cumulative count >= 0.99 * total
         let p99_target = (0.99 * total as f64).ceil() as u64;
         let mut cumulative: u64 = 0;
         let mut alpha_p99: u8 = 0;
@@ -79,6 +85,8 @@ impl SignalMetrics {
             total_pixels: total,
             nonzero_alpha_count: nonzero,
             nonzero_alpha_frac: nonzero as f64 / total as f64,
+            semi_transparent_count: semi,
+            semi_transparent_frac: semi as f64 / total as f64,
             alpha_mean: alpha_sum as f64 / total as f64,
             alpha_max,
             alpha_p99,
@@ -86,16 +94,18 @@ impl SignalMetrics {
         }
     }
 
-    /// Whether the signal exceeds the given threshold (watermark considered present).
+    /// Whether the watermark signal is present: sufficient semi-transparent pixels.
+    /// Uses semi-transparent fraction (0 < α < 255) as the signal indicator,
+    /// since normal opaque images have 0% semi-transparent pixels.
     pub fn is_present(&self, threshold: f64) -> bool {
-        self.nonzero_alpha_frac >= threshold
+        self.semi_transparent_frac >= threshold
     }
 
     /// Human-readable summary line.
     pub fn summary(&self) -> String {
         format!(
-            "α_nonzero={:.4}%  α_mean={:.4}  α_max={}  α_p99={}  composite_MAE={:.6}",
-            self.nonzero_alpha_frac * 100.0,
+            "α_semi={:.4}%  α_mean={:.4}  α_max={}  α_p99={}  composite_MAE={:.6}",
+            self.semi_transparent_frac * 100.0,
             self.alpha_mean,
             self.alpha_max,
             self.alpha_p99,
