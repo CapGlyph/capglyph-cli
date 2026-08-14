@@ -82,22 +82,43 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
         }
         EmbedMode::Dct => {
             info!("Mode: dct  delta={}", crate::dct::EMBED_DELTA);
+            // Preserve original alpha channel if the source has one.
+            // DCT operates only on RGB; alpha must be copied back to output.
+            let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
+                Some(
+                    src_img
+                        .to_rgba8()
+                        .pixels()
+                        .map(|p| p[3])
+                        .collect(),
+                )
+            } else {
+                None
+            };
+
             let mut rgb = src_img.to_rgb8();
             let n_blocks = crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
             let rid_note = args.recipient_id.as_deref()
                 .map(|id| format!(" recipient={id}"))
                 .unwrap_or_default();
-            
+
             if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
-                // Save directly as JPEG
-                save_as_jpeg(&rgb, &output_path, 85)?;
+                // JPEG has no alpha — composite over white before encoding
+                let out_rgb = match &orig_alpha {
+                    Some(alphas) => composite_rgb_over_white(&rgb, alphas, orig_w, orig_h),
+                    None => rgb.clone(),
+                };
+                save_as_jpeg(&out_rgb, &output_path, 85)?;
                 println!(
                     "Watermark embedded [dct→jpg, {} blocks{}] → {:?}",
                     n_blocks, rid_note, output_path
                 );
             } else {
-                // Save as PNG
-                let rgba = image::DynamicImage::ImageRgb8(rgb).to_rgba8();
+                // PNG: restore original alpha channel (or all-255 for opaque sources)
+                let rgba = match orig_alpha {
+                    Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
+                    None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
+                };
                 rgba.save(&output_path)
                     .with_context(|| format!("Failed to save output: {:?}", output_path))?;
                 println!(
@@ -374,6 +395,27 @@ pub fn resolve_output(input: &Path, override_: Option<&Path>, suffix: &str, ext:
     let stem = input.file_stem().unwrap_or_default().to_string_lossy();
     let parent = input.parent().unwrap_or(Path::new("."));
     parent.join(format!("{}{}.{}", stem, suffix, ext))
+}
+
+/// Reconstruct an RGBA image from separate RGB data and a flat alpha vec.
+fn merge_rgb_alpha(rgb: &image::RgbImage, alphas: &[u8], w: u32, h: u32) -> image::RgbaImage {
+    image::RgbaImage::from_fn(w, h, |x, y| {
+        let p = rgb.get_pixel(x, y);
+        let a = alphas[(y * w + x) as usize];
+        image::Rgba([p[0], p[1], p[2], a])
+    })
+}
+
+/// Composite RGB + alpha over a white background → flat RGB (for JPEG output).
+fn composite_rgb_over_white(rgb: &image::RgbImage, alphas: &[u8], w: u32, h: u32) -> image::RgbImage {
+    image::RgbImage::from_fn(w, h, |x, y| {
+        let p = rgb.get_pixel(x, y);
+        let a = alphas[(y * w + x) as usize] as f32 / 255.0;
+        let r = (a * p[0] as f32 + (1.0 - a) * 255.0).round() as u8;
+        let g = (a * p[1] as f32 + (1.0 - a) * 255.0).round() as u8;
+        let b = (a * p[2] as f32 + (1.0 - a) * 255.0).round() as u8;
+        image::Rgb([r, g, b])
+    })
 }
 
 /// Save an RGB image as JPEG with the given quality (10–100).

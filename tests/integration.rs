@@ -24,7 +24,24 @@ fn make_test_png(dir: &TempDir) -> PathBuf {
     path
 }
 
-// ── Helpers that mirror CLI behaviour ────────────────────────────────────────
+/// A 64×64 RGBA PNG with a transparent centre (simulates icon/sticker).
+fn make_test_rgba_png(dir: &TempDir) -> PathBuf {
+    let path = dir.path().join("test_input_rgba.png");
+    let img = image::RgbaImage::from_fn(64, 64, |x, y| {
+        // Checkerboard pattern; centre 32×32 is semi-transparent
+        let cell_x = x / 4;
+        let cell_y = y / 4;
+        let in_centre = (16..48).contains(&x) && (16..48).contains(&y);
+        let alpha: u8 = if in_centre { 128 } else { 255 };
+        if (cell_x + cell_y) % 2 == 0 {
+            image::Rgba([255u8, 255, 255, alpha])
+        } else {
+            image::Rgba([0u8, 0, 0, alpha])
+        }
+    });
+    img.save(&path).unwrap();
+    path
+}
 
 use sigil::cli::{EmbedArgs, EmbedMode, StripArgs, VerifyArgs};
 use sigil::{embed, strip, verify};
@@ -369,4 +386,105 @@ fn alpha_watermark_destroyed_by_jpeg() {
     };
     let result = verify::run(&verify_args).unwrap();
     assert!(!result, "Alpha watermark should be destroyed by JPEG");
+}
+
+#[test]
+fn dct_preserves_alpha_channel() {
+    let tmp = TempDir::new().unwrap();
+    let input = make_test_rgba_png(&tmp);
+    let output = tmp.path().join("watermarked_rgba.png");
+
+    // Embed DCT watermark
+    let args = EmbedArgs {
+        input: input.clone(),
+        output: Some(output.clone()),
+        mode: EmbedMode::Dct,
+        stroke: 0.010,
+        detail: 5,
+        min_path_len: 3,
+        chaikin_iters: 1,
+        from_geometry: None,
+        recipient_id: None,
+        color: false,
+        save_geometry: None,
+    };
+    embed::run(&args).unwrap();
+
+    // Load original and watermarked images
+    let orig = image::open(&input).unwrap().to_rgba8();
+    let wm = image::open(&output).unwrap().to_rgba8();
+
+    // Check alpha channel preserved exactly
+    let (w, h) = orig.dimensions();
+    let mut alpha_match = 0;
+    for y in 0..h {
+        for x in 0..w {
+            if orig.get_pixel(x, y)[3] == wm.get_pixel(x, y)[3] {
+                alpha_match += 1;
+            }
+        }
+    }
+    let total = (w * h) as usize;
+    let alpha_preservation = alpha_match as f32 / total as f32;
+    
+    assert!(
+        alpha_preservation > 0.99,
+        "Alpha channel should be preserved ({}% match)",
+        alpha_preservation * 100.0
+    );
+
+    // Verify watermark still works
+    let verify_args = VerifyArgs {
+        input: output,
+        mode: EmbedMode::Dct,
+        geometry: None,
+        threshold: 0.0001,
+        verbose: false,
+    };
+    let result = verify::run(&verify_args).unwrap();
+    assert!(result, "DCT watermark should survive on RGBA input");
+}
+
+#[test]
+fn strip_composites_transparent_over_white() {
+    let tmp = TempDir::new().unwrap();
+    let input = make_test_rgba_png(&tmp);
+    let stripped = tmp.path().join("stripped.png");
+
+    // Strip the alpha channel
+    let args = StripArgs {
+        input: input.clone(),
+        output: Some(stripped.clone()),
+    };
+    strip::run(&args).unwrap();
+
+    // Load original RGBA and stripped RGB
+    let orig = image::open(&input).unwrap().to_rgba8();
+    let strip = image::open(&stripped).unwrap().to_rgb8();
+
+    // Manual white composite for verification
+    let (w, h) = orig.dimensions();
+    let mut correct_composite = 0;
+    for y in 0..h {
+        for x in 0..w {
+            let op = orig.get_pixel(x, y);
+            let sp = strip.get_pixel(x, y);
+            let a = op[3] as f32 / 255.0;
+            let expected_r = (a * op[0] as f32 + (1.0 - a) * 255.0).round() as u8;
+            let expected_g = (a * op[1] as f32 + (1.0 - a) * 255.0).round() as u8;
+            let expected_b = (a * op[2] as f32 + (1.0 - a) * 255.0).round() as u8;
+            
+            if sp[0] == expected_r && sp[1] == expected_g && sp[2] == expected_b {
+                correct_composite += 1;
+            }
+        }
+    }
+    let total = (w * h) as usize;
+    let composite_accuracy = correct_composite as f32 / total as f32;
+    
+    assert!(
+        composite_accuracy > 0.99,
+        "Strip should composite over white ({}% correct)",
+        composite_accuracy * 100.0
+    );
 }
