@@ -159,8 +159,22 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             };
 
             let mut rgb = src_img.to_rgb8();
-            let n_coeffs =
+            let (n_coeffs, dwt_positions) =
                 crate::dwt_embed::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
+
+            // Store positions in geometry when recipient_id is provided
+            let mut geometry_with_blocks = geometry.clone();
+            if args.recipient_id.is_some() {
+                geometry_with_blocks.blocks = Some(dwt_positions);
+                if let Some(ref save_path) = args.save_geometry {
+                    info!("Updating geometry file with DWT positions: {:?}", save_path);
+                    let json = geometry_with_blocks.to_json()?;
+                    std::fs::write(save_path, &json).with_context(|| {
+                        format!("Failed to update geometry file: {:?}", save_path)
+                    })?;
+                }
+            }
+
             let rid_note = args
                 .recipient_id
                 .as_deref()

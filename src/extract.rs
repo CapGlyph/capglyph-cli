@@ -141,10 +141,26 @@ fn extract_from_dwt(
     use crate::dwt::haar_2d_forward;
     use crate::dwt_embed::EMBED_BAND;
 
+    let positions = geometry.blocks.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "No block coordinates in geometry file. Re-run embed with --recipient-id to generate them."
+        )
+    })?;
+
     let bit_count = id_length * 8;
+    let redundancy = crate::spread_spectrum::REDUNDANCY;
+    let bits_needed = bit_count * redundancy;
+
+    if positions.len() < bits_needed {
+        anyhow::bail!(
+            "Not enough DWT positions for ID extraction: need {}, have {}",
+            bits_needed,
+            positions.len()
+        );
+    }
 
     // Average over 3 channels
-    let mut all_coeffs_sum: Option<Vec<f32>> = None;
+    let mut bit_signals: Vec<f32> = vec![0.0; bits_needed];
 
     for ch in 0..3usize {
         let channel_matrix: Vec<Vec<f32>> = (0..h)
@@ -152,44 +168,37 @@ fn extract_from_dwt(
             .collect();
         let decomp = haar_2d_forward(&channel_matrix)?;
         let band = decomp.band(EMBED_BAND);
+        let (bh, bw) = (band.len(), band[0].len());
 
-        let flat: Vec<f32> = band.iter().flat_map(|row| row.iter().copied()).collect();
-
-        match &mut all_coeffs_sum {
-            None => all_coeffs_sum = Some(flat),
-            Some(existing) => {
-                for (a, b) in existing.iter_mut().zip(flat.iter()) {
-                    *a += b;
-                }
+        for (i, &(bx, by)) in positions.iter().enumerate().take(bits_needed) {
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                bit_signals[i] += band[by][bx];
             }
         }
     }
 
-    let mut coeffs: Vec<f32> = all_coeffs_sum
-        .unwrap_or_default()
-        .into_iter()
-        .map(|v| v / 3.0)
-        .collect();
-
-    // Extract bits using same seed as embed
-    let seed = {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h = DefaultHasher::new();
-        geometry.prng_seed.hash(&mut h);
-        h.finish()
-    };
-
-    // Subtract baseline (median) to center the signal
-    let mut sorted_coeffs = coeffs.clone();
-    sorted_coeffs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = sorted_coeffs[sorted_coeffs.len() / 2];
-    for c in &mut coeffs {
-        *c -= median;
+    // Average bit_signals across 3 channels
+    for s in &mut bit_signals {
+        *s /= 3.0;
     }
 
-    let bits = crate::spread_spectrum::extract_from_coeffs(&coeffs, bit_count, seed);
-    let decoded = crate::spread_spectrum::decode_bits(&bits)?;
+    // Decode: compare each group mean against the GLOBAL mean of the ID region only.
+    // We must NOT include primary watermark positions (index >= bits_needed) because
+    // those all have +DWT_EMBED_STRENGTH bias that would skew the reference upward.
+    let global_id_mean = bit_signals.iter().sum::<f32>() / bit_signals.len() as f32;
+    let redundancy = crate::spread_spectrum::REDUNDANCY;
+    let mut decoded_bits = Vec::new();
+    for bit_idx in 0..(id_length * 8) {
+        let start = bit_idx * redundancy;
+        let end = (start + redundancy).min(bits_needed);
+        let group_mean = bit_signals[start..end].iter().sum::<f32>() / (end - start) as f32;
+        // bit=1 → +DWT_ID_EMBED_STRENGTH → group_mean > global_id_mean
+        // bit=0 → -DWT_ID_EMBED_STRENGTH → group_mean < global_id_mean
+        decoded_bits.push(group_mean > global_id_mean);
+    }
 
+    let decoded = crate::spread_spectrum::bits_to_str(&decoded_bits)?;
     Ok(decoded)
 }

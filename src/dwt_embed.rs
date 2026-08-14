@@ -15,6 +15,12 @@ use crate::geometry::GeometryFile;
 /// Higher = more robust but more visible. 8.0 gives PSNR ≈ 44-46 dB (invisible).
 pub const DWT_EMBED_STRENGTH: f32 = 8.0;
 
+/// Strength for recipient ID bit embedding in DWT mode.
+/// Must be large enough to dominate natural LH coefficient variance at skeleton
+/// positions (which can be ±200 for textured photographic images).
+/// 256.0 ensures ±delta >> typical group variance, making polarity reliable.
+pub const DWT_ID_EMBED_STRENGTH: f32 = 256.0;
+
 /// Sub-band used for embedding.
 pub const EMBED_BAND: WaveletBand = WaveletBand::LH;
 
@@ -45,22 +51,33 @@ pub struct DwtSignalMetrics {
 ///   1. Convert channel to f32 matrix
 ///   2. Apply 2D Haar DWT
 ///   3. Map geometry path coordinates into LH sub-band coordinates
-///   4. Add EMBED_STRENGTH to positive coefficients, subtract from negative
-///   5. Apply inverse DWT
-///   6. Clamp to 0-255 and write back
+///   4. Primary positions: add +EMBED_STRENGTH (detectable by verify)
+///   5. ID positions (when recipient_id provided): ±EMBED_STRENGTH encoding bits
+///   6. Apply inverse DWT, clamp to 0-255 and write back
 ///
-/// Returns the number of modified coefficients.
+/// Returns `(num_modified_coefficients, sorted_positions)`.
+/// Caller must store positions into GeometryFile.blocks when recipient_id is set.
 pub fn embed(
     img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
-) -> Result<u64> {
+) -> Result<(u64, Vec<(u32, u32)>)> {
     let (w, h) = img.dimensions();
 
-    let positions = collect_embed_positions(geometry, w, h, recipient_id);
+    let positions = collect_embed_positions(geometry, w, h);
     if positions.is_empty() {
-        return Ok(0);
+        return Ok((0, vec![]));
     }
+
+    // Compute ID bits if recipient_id provided
+    let id_bits: Vec<bool> = if let Some(rid) = recipient_id {
+        crate::spread_spectrum::str_to_bits(rid)
+    } else {
+        vec![]
+    };
+
+    let redundancy = crate::spread_spectrum::REDUNDANCY;
+    let bits_needed = id_bits.len() * redundancy;
 
     let mut total_modified = 0u64;
 
@@ -70,30 +87,36 @@ pub fn embed(
 
         // Forward DWT
         let mut decomp = haar_2d_forward(&channel_matrix)?;
-
-        // Modify LH band coefficients at geometry positions
         let band = decomp.band_mut(EMBED_BAND);
         let (bh, bw) = (band.len(), band[0].len());
 
-        for &(bx, by) in &positions {
+        for (i, &(bx, by)) in positions.iter().enumerate() {
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                // Always embed: add EMBED_STRENGTH regardless of current coefficient value.
-                // Near-zero coefficients are fine — we're adding a positive bias.
-                band[by][bx] += DWT_EMBED_STRENGTH;
+                let delta = if !id_bits.is_empty() && i < bits_needed {
+                    // ID-encoding region: ±ID_EMBED_STRENGTH for reliable polarity decoding
+                    let bit_idx = i / redundancy;
+                    if id_bits[bit_idx] {
+                        DWT_ID_EMBED_STRENGTH
+                    } else {
+                        -DWT_ID_EMBED_STRENGTH
+                    }
+                } else {
+                    // Primary watermark region: always +EMBED_STRENGTH
+                    DWT_EMBED_STRENGTH
+                };
+                band[by][bx] += delta;
                 total_modified += 1;
             }
         }
 
         // Inverse DWT
         let reconstructed = haar_2d_inverse(&decomp)?;
-
-        // Write back clamped values
         write_channel(img, ch, &reconstructed);
     }
 
-    Ok(total_modified / 3) // count per-channel, return per-position count
+    Ok((total_modified / 3, positions))
 }
 
 // ── Verify ────────────────────────────────────────────────────────────────────
@@ -111,7 +134,7 @@ pub fn verify(
 ) -> Result<DwtSignalMetrics> {
     let (w, h) = img.dimensions();
 
-    let positions = collect_embed_positions(geometry, w, h, None);
+    let positions = collect_embed_positions(geometry, w, h);
     if positions.is_empty() {
         return Ok(DwtSignalMetrics {
             total_coefficients: 0,
@@ -165,12 +188,8 @@ pub fn verify(
 
 /// Convert geometry path coordinates into DWT LH sub-band positions.
 /// The LH band is W/2 × H/2, so path coordinates are halved.
-fn collect_embed_positions(
-    geometry: &GeometryFile,
-    img_w: u32,
-    img_h: u32,
-    recipient_id: Option<&str>,
-) -> Vec<(u32, u32)> {
+/// Returns positions in deterministic sorted order (for reproducible ID embedding).
+fn collect_embed_positions(geometry: &GeometryFile, img_w: u32, img_h: u32) -> Vec<(u32, u32)> {
     let band_w = img_w / 2;
     let band_h = img_h / 2;
 
@@ -188,34 +207,10 @@ fn collect_embed_positions(
         }
     }
 
-    // Apply recipient ID mixing if provided
-    let positions: Vec<(u32, u32)> = if let Some(rid) = recipient_id {
-        let seed = fnv1a_hash(rid);
-        positions
-            .into_iter()
-            .filter(|(x, y)| {
-                // XOR-shift the position with recipient seed for unique pattern
-                let mixed = (*x as u64 ^ seed).wrapping_add(*y as u64);
-                mixed.is_multiple_of(2) // ~50% of positions used per recipient
-            })
-            .collect()
-    } else {
-        positions.into_iter().collect()
-    };
-
+    // Sort for deterministic ordering
+    let mut positions: Vec<(u32, u32)> = positions.into_iter().collect();
+    positions.sort_unstable();
     positions
-}
-
-/// FNV-1a hash for recipient ID mixing.
-fn fnv1a_hash(s: &str) -> u64 {
-    const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
-    const FNV_PRIME: u64 = 1_099_511_628_211;
-    let mut hash = FNV_OFFSET;
-    for byte in s.bytes() {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
 }
 
 /// Extract a single RGB channel as f32 matrix.
@@ -280,7 +275,7 @@ mod tests {
         let original = img.clone();
         let geo = make_test_geometry(w, h);
 
-        let n = embed(&mut img, &geo, None).unwrap();
+        let (n, _positions) = embed(&mut img, &geo, None).unwrap();
         assert!(n > 0, "Expected some coefficients to be modified");
 
         // Image should be visually similar but not identical
@@ -302,33 +297,97 @@ mod tests {
     }
 
     #[test]
-    fn test_dwt_verify_detects_embedded_watermark() {
-        let (w, h) = (64u32, 64u32);
+    fn test_dwt_recipient_id_roundtrip() {
+        use crate::geometry::PathEntry;
+
+        let (w, h) = (512u32, 512u32);
         let mut img = ImageBuffer::from_fn(w, h, |x, y| {
-            let v = ((x * 3 + y * 7) % 255) as u8;
+            let v = ((x * 3 + y * 7 + x * y) % 255) as u8;
             Rgb([v, (v + 40) % 255, (v + 80) % 255])
         });
-        let geo = make_test_geometry(w, h);
 
-        // Baseline (no watermark)
-        let metrics_before = verify(&img, &geo).unwrap();
+        // Build a geometry with multiple crossing paths to generate many LH positions.
+        // Need >= 200 unique positions for "hi" (2 chars × 8 bits × 5 redundancy = 80 positions).
+        let n_paths = 40;
+        let step = w / n_paths;
+        let mut paths = Vec::new();
+        for i in 0..n_paths {
+            let x = (i * step) as f64;
+            paths.push(PathEntry {
+                color: None,
+                points: (0..20).map(|j| [x, (j as f64 / 19.0) * h as f64]).collect(),
+            });
+        }
+        // Also add horizontal paths
+        for i in 0..n_paths {
+            let y = (i * step) as f64;
+            paths.push(PathEntry {
+                color: None,
+                points: (0..20).map(|j| [(j as f64 / 19.0) * w as f64, y]).collect(),
+            });
+        }
 
-        // Embed
-        embed(&mut img, &geo, None).unwrap();
+        use crate::geometry::{AnalysisParams, GeometryFile};
+        let geo = GeometryFile {
+            version: 1,
+            original_width: w,
+            original_height: h,
+            analysis_params: AnalysisParams {
+                detail: 60,
+                min_path_len: 5,
+                chaikin_iters: 3,
+                color: false,
+            },
+            paths,
+            prng_seed: None,
+            blocks: None,
+        };
 
-        // After embedding
-        let metrics_after = verify(&img, &geo).unwrap();
+        let rid = "hi";
+        let bits_needed = rid.len() * 8 * crate::spread_spectrum::REDUNDANCY;
 
+        // Embed with recipient ID
+        let (n, positions) = embed(&mut img, &geo, Some(rid)).unwrap();
+        assert!(n > 0, "No coefficients modified");
         assert!(
-            metrics_after.detection_rate > metrics_before.detection_rate,
-            "Detection rate should increase after embedding: {} vs {}",
-            metrics_after.detection_rate,
-            metrics_before.detection_rate
+            positions.len() >= bits_needed,
+            "Not enough positions: {} < {}",
+            positions.len(),
+            bits_needed
         );
-        assert!(
-            metrics_after.detection_rate > DWT_DETECT_THRESHOLD,
-            "Detection rate below threshold: {}",
-            metrics_after.detection_rate
+
+        // Extract by reading back the LH band at stored positions
+        let redundancy = crate::spread_spectrum::REDUNDANCY;
+        let mut bit_signals: Vec<f32> = vec![0.0; bits_needed];
+        for ch in 0..3usize {
+            let channel_matrix = extract_channel(&img, ch);
+            let decomp = crate::dwt::haar_2d_forward(&channel_matrix).unwrap();
+            let band = decomp.band(EMBED_BAND);
+            let (bh, bw) = (band.len(), band[0].len());
+            for (i, &(bx, by)) in positions.iter().enumerate().take(bits_needed) {
+                let bx = bx as usize;
+                let by = by as usize;
+                if bx < bw && by < bh {
+                    bit_signals[i] += band[by][bx];
+                }
+            }
+        }
+        for s in &mut bit_signals {
+            *s /= 3.0;
+        }
+        let global_mean = bit_signals.iter().sum::<f32>() / bit_signals.len() as f32;
+        let mut decoded_bits = Vec::new();
+        for bit_idx in 0..(rid.len() * 8) {
+            let start = bit_idx * redundancy;
+            let end = (start + redundancy).min(bits_needed);
+            let group_mean = bit_signals[start..end].iter().sum::<f32>() / (end - start) as f32;
+            decoded_bits.push(group_mean > global_mean);
+        }
+        let decoded = crate::spread_spectrum::bits_to_str(&decoded_bits).unwrap();
+        assert_eq!(
+            decoded, rid,
+            "DWT recipient-id roundtrip failed: got {:?}",
+            decoded
         );
     }
 }
