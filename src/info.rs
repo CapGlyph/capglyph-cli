@@ -13,6 +13,7 @@ pub fn info(args: &InfoArgs) -> Result<()> {
     match args.mode {
         EmbedMode::Alpha => info_alpha(&img, w, h),
         EmbedMode::Dct => info_dct(&img, w, h, args.geometry.as_deref()),
+        EmbedMode::Dwt => info_dwt(&img, w, h, args.geometry.as_deref()),
     }
 }
 
@@ -78,6 +79,46 @@ fn info_dct(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) ->
         println!("\n✓ DCT watermark signal detected (likely watermarked)");
     } else {
         println!("\n✗ No DCT signal detected");
+    }
+
+    Ok(())
+}
+
+fn info_dwt(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) -> Result<()> {
+    let rgb = img.to_rgb8();
+
+    let geometry = match geometry_path {
+        Some(p) => {
+            let json = std::fs::read_to_string(p)?;
+            serde_json::from_str::<GeometryFile>(&json)?
+        }
+        None => {
+            tracing::info!("No geometry file provided — re-extracting skeleton from image");
+            let params = crate::embed::GeometryParams {
+                detail: 60,
+                min_path_len: 5,
+                chaikin_iters: 3,
+                color: false,
+                recipient_id: None,
+            };
+            crate::embed::extract_and_build_geometry(&rgb, w, h, &params)?
+        }
+    };
+
+    let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
+
+    println!("Mode:                 dwt");
+    println!("Image size:           {}×{} ({} pixels)", w, h, w * h);
+    println!("Geometry paths:       {}", geometry.paths.len());
+    println!("Total coefficients:   {}", metrics.total_coefficients);
+    println!("Detected coefficients: {}", metrics.detected_count);
+    println!("Mean signal:          {:.3}", metrics.mean_signal);
+    println!("Detection rate:       {:.1}%", metrics.detection_rate * 100.0);
+
+    if metrics.detection_rate > 0.5 {
+        println!("\n✓ DWT watermark signal detected (likely watermarked)");
+    } else {
+        println!("\n✗ No DWT signal detected");
     }
 
     Ok(())

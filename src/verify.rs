@@ -23,6 +23,7 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
     match args.mode {
         EmbedMode::Alpha => verify_alpha(&img, args),
         EmbedMode::Dct => verify_dct(&img, args),
+        EmbedMode::Dwt => verify_dwt(&img, args),
     }
 }
 
@@ -217,7 +218,49 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     Ok(present)
 }
 
-/// Re-extract skeleton geometry from a (potentially watermarked) image.
+/// DWT-domain verification: check LH sub-band coefficient bias at geometry positions.
+fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
+    let geometry = match &args.geometry {
+        Some(p) => {
+            let json = std::fs::read_to_string(p)
+                .with_context(|| format!("Failed to read geometry file: {:?}", p))?;
+            serde_json::from_str::<GeometryFile>(&json)
+                .context("Failed to parse geometry JSON")?
+        }
+        None => {
+            info!("No geometry file — re-extracting skeleton from image");
+            extract_geometry_from_image(img)?
+        }
+    };
+
+    let rgb = img.to_rgb8();
+    let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
+
+    let present = metrics.detection_rate >= args.threshold;
+
+    if present {
+        println!("WATERMARK PRESENT");
+    } else {
+        println!("WATERMARK ABSENT OR DESTROYED");
+    }
+
+    if args.verbose {
+        println!("  mode:       dwt");
+        println!("  image:      {}×{}", img.width(), img.height());
+        println!("  paths:      {}", geometry.paths.len());
+        println!("  coefficients: {}", metrics.total_coefficients);
+        println!(
+            "  detection:  {}/{} ({:.1}%)",
+            metrics.detected_count,
+            metrics.total_coefficients,
+            metrics.detection_rate * 100.0
+        );
+        println!("  mean signal: {:.2}", metrics.mean_signal);
+        println!("  threshold:  {:.0}%", args.threshold * 100.0);
+    }
+
+    Ok(present)
+}
 /// Uses the same vectomancy raster pipeline as embed, with default params.
 /// Accuracy may be slightly lower than using the saved geometry file.
 fn extract_geometry_from_image(img: &image::DynamicImage) -> Result<crate::geometry::GeometryFile> {

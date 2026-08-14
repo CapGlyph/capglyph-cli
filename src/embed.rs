@@ -127,6 +127,46 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
                 );
             }
         }
+        EmbedMode::Dwt => {
+            info!("Mode: dwt  strength={}", crate::dwt_embed::DWT_EMBED_STRENGTH);
+            let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
+                Some(src_img.to_rgba8().pixels().map(|p| p[3]).collect())
+            } else {
+                None
+            };
+
+            let mut rgb = src_img.to_rgb8();
+            let n_coeffs =
+                crate::dwt_embed::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
+            let rid_note = args
+                .recipient_id
+                .as_deref()
+                .map(|id| format!(" recipient={id}"))
+                .unwrap_or_default();
+
+            if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
+                let out_rgb = match &orig_alpha {
+                    Some(alphas) => composite_rgb_over_white(&rgb, alphas, orig_w, orig_h),
+                    None => rgb.clone(),
+                };
+                save_as_jpeg(&out_rgb, &output_path, 85)?;
+                println!(
+                    "Watermark embedded [dwt→jpg, {} coefficients{}] → {:?}",
+                    n_coeffs, rid_note, output_path
+                );
+            } else {
+                let rgba = match orig_alpha {
+                    Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
+                    None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
+                };
+                rgba.save(&output_path)
+                    .with_context(|| format!("Failed to save output: {:?}", output_path))?;
+                println!(
+                    "Watermark embedded [dwt, {} coefficients{}] → {:?}",
+                    n_coeffs, rid_note, output_path
+                );
+            }
+        }
     }
 
     Ok(())

@@ -8,6 +8,8 @@ pub enum EmbedMode {
     Alpha,
     /// Stage 2: RGB DCT-domain residual. Survives PNG→JPG at quality≥50.
     Dct,
+    /// Stage 3: Haar DWT LH-band residual. Survives scale and moderate blur.
+    Dwt,
 }
 
 impl std::fmt::Display for EmbedMode {
@@ -15,6 +17,7 @@ impl std::fmt::Display for EmbedMode {
         match self {
             EmbedMode::Alpha => write!(f, "alpha"),
             EmbedMode::Dct => write!(f, "dct"),
+            EmbedMode::Dwt => write!(f, "dwt"),
         }
     }
 }

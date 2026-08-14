@@ -2837,7 +2837,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vectomancy"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "directories",
@@ -2862,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "vectomancy-export"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -2875,14 +2875,14 @@ dependencies = [
 
 [[package]]
 name = "vectomancy-geometry"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "vectomancy-pipeline"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "serde",
  "tracing",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "vectomancy-raster"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "image",
  "imageproc",
@@ -2907,7 +2907,7 @@ dependencies = [
 
 [[package]]
 name = "vectomancy-svg"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "serde",
  "usvg",
@@ -2917,7 +2917,7 @@ dependencies = [
 
 [[package]]
 name = "vectomancy-transform"
-version = "7.1.5"
+version = "2.0.0"
 dependencies = [
  "kiddo",
  "rustfft",
