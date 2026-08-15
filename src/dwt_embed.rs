@@ -30,6 +30,12 @@ pub const MIN_COEFF_THRESHOLD: f32 = 3.0;
 /// Signal detection threshold: fraction of marked coefficients required to confirm.
 pub const DWT_DETECT_THRESHOLD: f64 = 0.50;
 
+/// Fixed magic seed for self-sync seed positions in the LH band (reuse DCT constant).
+pub const SEED_MAGIC: u64 = crate::dct::SEED_MAGIC;
+
+/// Redundancy for self-sync seed bits (same as DCT mode).
+pub const SYNC_REDUNDANCY: usize = 8;
+
 /// Metrics from DWT watermark verification.
 #[derive(Debug)]
 pub struct DwtSignalMetrics {
@@ -47,16 +53,12 @@ pub struct DwtSignalMetrics {
 
 /// Embed a DWT watermark into the RGB image in-place.
 ///
-/// For each RGB channel:
-///   1. Convert channel to f32 matrix
-///   2. Apply 2D Haar DWT
-///   3. Map geometry path coordinates into LH sub-band coordinates
-///   4. Primary positions: add +EMBED_STRENGTH (detectable by verify)
-///   5. ID positions (when recipient_id provided): ±EMBED_STRENGTH encoding bits
-///   6. Apply inverse DWT, clamp to 0-255 and write back
+/// Three independent signal layers:
+///   1. Primary watermark: +DWT_EMBED_STRENGTH at geometry positions (verify)
+///   2. Self-sync seed: ±DWT_ID_EMBED_STRENGTH at SEED_MAGIC positions (64 bits)
+///   3. Recipient ID: ±DWT_ID_EMBED_STRENGTH at stable_seed PRNG positions
 ///
-/// Returns `(num_modified_coefficients, sorted_positions)`.
-/// Caller must store positions into GeometryFile.blocks when recipient_id is set.
+/// Layers 2+3 are geometry-free — extraction locates them via PRNG only.
 pub fn embed(
     img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
@@ -79,6 +81,29 @@ pub fn embed(
     let redundancy = crate::spread_spectrum::REDUNDANCY;
     let bits_needed = id_bits.len() * redundancy;
 
+    // Band-space PRNG position sets (geometry-free layers)
+    let band_w = w / 2;
+    let band_h = h / 2;
+
+    // Self-sync positions carry the 64-bit stable seed (only when ID is embedded)
+    let seed = crate::dct::stable_seed(img);
+    let sync_positions = if recipient_id.is_some() {
+        prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY)
+    } else {
+        vec![]
+    };
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_positions.iter().copied().collect();
+
+    // ID positions derived from the stable seed, excluding sync positions
+    let id_positions: Vec<(u32, u32)> = if recipient_id.is_some() {
+        prng_band_positions(seed, band_w, band_h, bits_needed + sync_set.len())
+            .into_iter()
+            .filter(|p| !sync_set.contains(p))
+            .collect()
+    } else {
+        vec![]
+    };
+
     let mut total_modified = 0u64;
 
     // Process each RGB channel independently
@@ -90,21 +115,53 @@ pub fn embed(
         let band = decomp.band_mut(EMBED_BAND);
         let (bh, bw) = (band.len(), band[0].len());
 
-        for (i, &(bx, by)) in positions.iter().enumerate() {
+        // Layer 1: primary watermark at geometry positions
+        for &(bx, by) in &positions {
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                let delta = if !id_bits.is_empty() && i < bits_needed {
-                    // ID-encoding region: ±ID_EMBED_STRENGTH for reliable polarity decoding
-                    let bit_idx = i / redundancy;
-                    if id_bits[bit_idx] {
-                        DWT_ID_EMBED_STRENGTH
-                    } else {
-                        -DWT_ID_EMBED_STRENGTH
-                    }
+                band[by][bx] += DWT_EMBED_STRENGTH;
+                total_modified += 1;
+            }
+        }
+
+        // Layer 2: self-sync seed bits (±)
+        let seed_bits: Vec<bool> = seed
+            .to_le_bytes()
+            .iter()
+            .flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1 == 1))
+            .collect();
+        for (i, &(bx, by)) in sync_positions.iter().enumerate() {
+            let bit_idx = i / SYNC_REDUNDANCY;
+            if bit_idx >= seed_bits.len() {
+                break;
+            }
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                let delta = if seed_bits[bit_idx] {
+                    DWT_ID_EMBED_STRENGTH
                 } else {
-                    // Primary watermark region: always +EMBED_STRENGTH
-                    DWT_EMBED_STRENGTH
+                    -DWT_ID_EMBED_STRENGTH
+                };
+                band[by][bx] += delta;
+                total_modified += 1;
+            }
+        }
+
+        // Layer 3: recipient ID bits (±)
+        for (i, &(bx, by)) in id_positions.iter().enumerate() {
+            if i >= bits_needed {
+                break;
+            }
+            let bit_idx = i / redundancy;
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                let delta = if id_bits[bit_idx] {
+                    DWT_ID_EMBED_STRENGTH
+                } else {
+                    -DWT_ID_EMBED_STRENGTH
                 };
                 band[by][bx] += delta;
                 total_modified += 1;
@@ -211,6 +268,35 @@ fn collect_embed_positions(geometry: &GeometryFile, img_w: u32, img_h: u32) -> V
     let mut positions: Vec<(u32, u32)> = positions.into_iter().collect();
     positions.sort_unstable();
     positions
+}
+
+/// Generate a deterministic ordered position list in LH band space.
+///
+/// Mirrors `crate::dct::prng_block_list` but operates on band coordinates
+/// (band_w × band_h) instead of 8×8 block coordinates. Positions are sorted
+/// for cross-process deterministic ordering.
+pub fn prng_band_positions(seed: u64, band_w: u32, band_h: u32, count: usize) -> Vec<(u32, u32)> {
+    if band_w == 0 || band_h == 0 {
+        return vec![];
+    }
+    let mut set = std::collections::HashSet::new();
+    let mut state = seed;
+    while set.len() < count {
+        state = lcg_next(state);
+        let bx = ((state >> 32) as u32) % band_w;
+        let by = (state as u32) % band_h;
+        set.insert((bx, by));
+    }
+    let mut list: Vec<(u32, u32)> = set.into_iter().collect();
+    list.sort_unstable();
+    list
+}
+
+/// LCG with Knuth's constants — mirrors dct.rs for band-space PRNG.
+fn lcg_next(state: u64) -> u64 {
+    state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
 }
 
 /// Extract a single RGB channel as f32 matrix.
@@ -347,16 +433,61 @@ mod tests {
         let bits_needed = rid.len() * 8 * crate::spread_spectrum::REDUNDANCY;
 
         // Embed with recipient ID
-        let (n, positions) = embed(&mut img, &geo, Some(rid)).unwrap();
+        let (n, _positions) = embed(&mut img, &geo, Some(rid)).unwrap();
         assert!(n > 0, "No coefficients modified");
+
+        // Geometry-free extraction: self-sync seed → PRNG ID positions → decode
+        let band_w = w / 2;
+        let band_h = h / 2;
+        let sync_positions = prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY);
+
+        // Recover seed from self-sync positions (embed modified the image, so
+        // stable_seed can no longer be recomputed directly).
+        let mut sync_signals: Vec<f32> = vec![0.0; 64 * SYNC_REDUNDANCY];
+        for ch in 0..3usize {
+            let channel_matrix = extract_channel(&img, ch);
+            let decomp = crate::dwt::haar_2d_forward(&channel_matrix).unwrap();
+            let band = decomp.band(EMBED_BAND);
+            let (bh, bw) = (band.len(), band[0].len());
+            for (i, &(bx, by)) in sync_positions.iter().enumerate() {
+                let bx = bx as usize;
+                let by = by as usize;
+                if bx < bw && by < bh {
+                    sync_signals[i] += band[by][bx];
+                }
+            }
+        }
+        for s in &mut sync_signals {
+            *s /= 3.0;
+        }
+        let sync_global = sync_signals.iter().sum::<f32>() / sync_signals.len() as f32;
+        let mut seed_bytes = [0u8; 8];
+        for (byte_idx, _byte_bits) in (0..64).step_by(8).enumerate() {
+            let mut byte = 0u8;
+            for bit in 0..8 {
+                let start = (byte_idx * 8 + bit) * SYNC_REDUNDANCY;
+                let group_mean: f32 = sync_signals[start..start + SYNC_REDUNDANCY]
+                    .iter()
+                    .sum::<f32>()
+                    / SYNC_REDUNDANCY as f32;
+                byte = (byte << 1) | (group_mean > sync_global) as u8;
+            }
+            seed_bytes[byte_idx] = byte;
+        }
+        let seed = u64::from_le_bytes(seed_bytes);
+
+        let sync_set: std::collections::HashSet<(u32, u32)> =
+            sync_positions.iter().copied().collect();
+        let id_positions: Vec<(u32, u32)> =
+            prng_band_positions(seed, band_w, band_h, bits_needed + sync_set.len())
+                .into_iter()
+                .filter(|p| !sync_set.contains(p))
+                .collect();
         assert!(
-            positions.len() >= bits_needed,
-            "Not enough positions: {} < {}",
-            positions.len(),
-            bits_needed
+            id_positions.len() >= bits_needed,
+            "Not enough PRNG positions"
         );
 
-        // Extract by reading back the LH band at stored positions
         let redundancy = crate::spread_spectrum::REDUNDANCY;
         let mut bit_signals: Vec<f32> = vec![0.0; bits_needed];
         for ch in 0..3usize {
@@ -364,7 +495,7 @@ mod tests {
             let decomp = crate::dwt::haar_2d_forward(&channel_matrix).unwrap();
             let band = decomp.band(EMBED_BAND);
             let (bh, bw) = (band.len(), band[0].len());
-            for (i, &(bx, by)) in positions.iter().enumerate().take(bits_needed) {
+            for (i, &(bx, by)) in id_positions.iter().enumerate().take(bits_needed) {
                 let bx = bx as usize;
                 let by = by as usize;
                 if bx < bw && by < bh {

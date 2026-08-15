@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use tracing::info;
 
 use crate::cli::ExtractArgs;
-use crate::geometry::GeometryFile;
 
 /// Entry point for the `extract` subcommand.
 /// Returns the decoded recipient ID string.
@@ -23,22 +22,8 @@ pub fn run(args: &ExtractArgs) -> Result<String> {
     match args.mode {
         // DCT mode is geometry-free: the seed is recovered from self-sync blocks.
         crate::cli::EmbedMode::Dct => extract_from_dct(&rgb, args.id_length, w, h),
-        // DWT mode needs geometry (position list), optionally from file.
-        crate::cli::EmbedMode::Dwt => {
-            let geometry = match &args.geometry {
-                Some(p) => {
-                    let json = std::fs::read_to_string(p)
-                        .with_context(|| format!("Failed to read geometry file: {:?}", p))?;
-                    serde_json::from_str::<GeometryFile>(&json)
-                        .context("Failed to parse geometry JSON")?
-                }
-                None => {
-                    info!("No geometry file — re-extracting skeleton from image");
-                    crate::verify::extract_geometry_from_image(&img)?
-                }
-            };
-            extract_from_dwt(&rgb, &geometry, args.id_length, w, h)
-        }
+        // DWT mode is geometry-free: the seed is recovered from self-sync LH positions.
+        crate::cli::EmbedMode::Dwt => extract_from_dwt(&rgb, args.id_length, w, h),
         crate::cli::EmbedMode::Alpha => {
             anyhow::bail!("extract is not supported for alpha mode (alpha mode does not carry recoverable bits)")
         }
@@ -126,26 +111,64 @@ fn extract_from_dct(img: &image::RgbImage, id_length: usize, _w: u32, _h: u32) -
     Ok(decoded)
 }
 
-fn extract_from_dwt(
-    img: &image::RgbImage,
-    geometry: &GeometryFile,
-    id_length: usize,
-    w: u32,
-    h: u32,
-) -> Result<String> {
+fn extract_from_dwt(img: &image::RgbImage, id_length: usize, w: u32, h: u32) -> Result<String> {
     use crate::dwt::haar_2d_forward;
-    use crate::dwt_embed::EMBED_BAND;
+    use crate::dwt_embed::{prng_band_positions, EMBED_BAND, SEED_MAGIC, SYNC_REDUNDANCY};
 
-    let positions = geometry.blocks.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "No block coordinates in geometry file. Re-run embed with --recipient-id to generate them."
-        )
-    })?;
+    let band_w = w / 2;
+    let band_h = h / 2;
 
+    // Step 1: recover the 64-bit seed from self-sync positions
+    let sync_positions = prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY);
+    if sync_positions.len() < 64 * SYNC_REDUNDANCY {
+        anyhow::bail!("Image too small for self-sync positions");
+    }
+
+    let mut sync_signals: Vec<f32> = vec![0.0; 64 * SYNC_REDUNDANCY];
+    for ch in 0..3usize {
+        let channel_matrix: Vec<Vec<f32>> = (0..h)
+            .map(|y| (0..w).map(|x| img.get_pixel(x, y)[ch] as f32).collect())
+            .collect();
+        let decomp = haar_2d_forward(&channel_matrix)?;
+        let band = decomp.band(EMBED_BAND);
+        let (bh, bw) = (band.len(), band[0].len());
+        for (i, &(bx, by)) in sync_positions.iter().enumerate() {
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                sync_signals[i] += band[by][bx];
+            }
+        }
+    }
+    for s in &mut sync_signals {
+        *s /= 3.0;
+    }
+    let sync_global_mean = sync_signals.iter().sum::<f32>() / sync_signals.len() as f32;
+    let mut seed_bits = Vec::with_capacity(64);
+    for bit_idx in 0..64 {
+        let start = bit_idx * SYNC_REDUNDANCY;
+        let group_mean: f32 = sync_signals[start..start + SYNC_REDUNDANCY]
+            .iter()
+            .sum::<f32>()
+            / SYNC_REDUNDANCY as f32;
+        seed_bits.push(group_mean > sync_global_mean);
+    }
+    let mut seed_bytes = [0u8; 8];
+    for (i, chunk) in seed_bits.chunks(8).enumerate() {
+        seed_bytes[i] = chunk.iter().fold(0u8, |acc, &bit| (acc << 1) | bit as u8);
+    }
+    let seed = u64::from_le_bytes(seed_bytes);
+
+    // Step 2: reconstruct ID positions from the recovered seed
     let bit_count = id_length * 8;
     let redundancy = crate::spread_spectrum::REDUNDANCY;
     let bits_needed = bit_count * redundancy;
-
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_positions.iter().copied().collect();
+    let positions: Vec<(u32, u32)> =
+        prng_band_positions(seed, band_w, band_h, bits_needed + sync_set.len())
+            .into_iter()
+            .filter(|p| !sync_set.contains(p))
+            .collect();
     if positions.len() < bits_needed {
         anyhow::bail!(
             "Not enough DWT positions for ID extraction: need {}, have {}",
@@ -154,9 +177,8 @@ fn extract_from_dwt(
         );
     }
 
-    // Average over 3 channels
+    // Step 3: decode ID bits
     let mut bit_signals: Vec<f32> = vec![0.0; bits_needed];
-
     for ch in 0..3usize {
         let channel_matrix: Vec<Vec<f32>> = (0..h)
             .map(|y| (0..w).map(|x| img.get_pixel(x, y)[ch] as f32).collect())
@@ -164,7 +186,6 @@ fn extract_from_dwt(
         let decomp = haar_2d_forward(&channel_matrix)?;
         let band = decomp.band(EMBED_BAND);
         let (bh, bw) = (band.len(), band[0].len());
-
         for (i, &(bx, by)) in positions.iter().enumerate().take(bits_needed) {
             let bx = bx as usize;
             let by = by as usize;
@@ -173,24 +194,16 @@ fn extract_from_dwt(
             }
         }
     }
-
-    // Average bit_signals across 3 channels
     for s in &mut bit_signals {
         *s /= 3.0;
     }
 
-    // Decode: compare each group mean against the GLOBAL mean of the ID region only.
-    // We must NOT include primary watermark positions (index >= bits_needed) because
-    // those all have +DWT_EMBED_STRENGTH bias that would skew the reference upward.
     let global_id_mean = bit_signals.iter().sum::<f32>() / bit_signals.len() as f32;
-    let redundancy = crate::spread_spectrum::REDUNDANCY;
     let mut decoded_bits = Vec::new();
     for bit_idx in 0..(id_length * 8) {
         let start = bit_idx * redundancy;
         let end = (start + redundancy).min(bits_needed);
         let group_mean = bit_signals[start..end].iter().sum::<f32>() / (end - start) as f32;
-        // bit=1 → +DWT_ID_EMBED_STRENGTH → group_mean > global_id_mean
-        // bit=0 → -DWT_ID_EMBED_STRENGTH → group_mean < global_id_mean
         decoded_bits.push(group_mean > global_id_mean);
     }
 
