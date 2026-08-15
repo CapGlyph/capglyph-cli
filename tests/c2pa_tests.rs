@@ -361,4 +361,8 @@ fn cli_c2pa_sign_recipient_id_requires_mode() {
         "dct",
     ])
     .is_ok());
+    assert!(Cli::try_parse_from([
+        "sigil", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "--mode", "dct",
+    ])
+    .is_err());
 }

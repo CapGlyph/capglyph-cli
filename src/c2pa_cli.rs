@@ -61,7 +61,8 @@ pub fn run(cmd: &C2paCommand) -> Result<i32> {
             match report.signature_status.as_str() {
                 "valid" => Ok(0),
                 "invalid" => Ok(1),
-                _ => Ok(2),
+                "unsigned" => Ok(2),
+                other => anyhow::bail!("unexpected signature_status: {other}"),
             }
         }
     }
