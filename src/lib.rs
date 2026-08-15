@@ -1,5 +1,7 @@
 // Library crate — all modules are public so integration tests can import them.
 pub mod batch;
+#[cfg(feature = "c2pa")]
+pub mod c2pa;
 pub mod cli;
 pub mod dct;
 pub mod dwt;
