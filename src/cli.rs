@@ -134,6 +134,12 @@ pub struct VerifyArgs {
     #[arg(long, default_value_t = 0.0001)]
     pub threshold: f64,
 
+    /// Mean-signal threshold for dct/dwt modes (default: 4.0).
+    /// The watermark adds a positive bias to marked coefficients; a clean
+    /// image has near-zero mean signal at those positions.
+    #[arg(long, default_value_t = 4.0)]
+    pub mean_threshold: f64,
+
     /// Print full signal statistics
     #[arg(long)]
     pub verbose: bool,

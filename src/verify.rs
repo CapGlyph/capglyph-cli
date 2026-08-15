@@ -170,22 +170,26 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
         }
     };
 
-    // Sample blocks: check how many still have the marker coefficient offset
+    // Sample blocks: mean-signal detection. Embedding adds +EMBED_DELTA to
+    // F[2,3]; a clean image has ~zero mean at these positions.
     let (u, v) = (2, 3);
-    let mut marked_count = 0;
     let sample_size = skeleton_blocks.len().min(100);
     let sample: Vec<_> = skeleton_blocks.iter().take(sample_size).copied().collect();
 
+    let mut coeff_sum = 0.0f64;
+    let mut marked_count = 0;
     for (bx, by) in &sample {
         let mut block = crate::dct::extract_block(&rgb, bx * 8, by * 8, 0);
         crate::dct::dct8x8_forward(&mut block);
+        coeff_sum += block[u][v] as f64;
         if block[u][v].abs() > 8.0 {
             marked_count += 1;
         }
     }
 
+    let mean_signal = coeff_sum / sample_size as f64;
     let detection_rate = marked_count as f64 / sample_size as f64;
-    let present = detection_rate >= args.threshold;
+    let present = mean_signal >= args.mean_threshold;
 
     if present {
         println!("WATERMARK PRESENT");
@@ -204,7 +208,8 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
                 sample_size,
                 detection_rate * 100.0
             );
-            println!("  threshold: {:.0}%", args.threshold * 100.0);
+            println!("  mean signal: {:.2}", mean_signal);
+            println!("  mean threshold: {:.1}", args.mean_threshold);
         }
     } else {
         println!("WATERMARK ABSENT OR DESTROYED");
@@ -223,7 +228,8 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
                 sample_size,
                 detection_rate * 100.0
             );
-            println!("  threshold: {:.0}%", args.threshold * 100.0);
+            println!("  mean signal: {:.2}", mean_signal);
+            println!("  mean threshold: {:.1}", args.mean_threshold);
         }
     }
 
@@ -247,7 +253,8 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let rgb = img.to_rgb8();
     let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
 
-    let present = metrics.detection_rate >= args.threshold;
+    let present = metrics.mean_signal as f64 >= args.mean_threshold
+        || (metrics.detection_rate >= 0.8 && metrics.mean_signal as f64 >= 2.0);
 
     if present {
         println!("WATERMARK PRESENT");
@@ -267,7 +274,7 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
             metrics.detection_rate * 100.0
         );
         println!("  mean signal: {:.2}", metrics.mean_signal);
-        println!("  threshold:  {:.0}%", args.threshold * 100.0);
+        println!("  mean threshold: {:.1}", args.mean_threshold);
     }
 
     Ok(present)
