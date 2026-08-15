@@ -3,6 +3,8 @@
 Invisible structural watermark for images — proof of origin, leak tracing,
 and tamper detection.
 
+[简体中文](README.zh-CN.md)
+
 ## What it does
 
 Sigil embeds a sub-perceptual watermark into PNG/JPEG images and can later
@@ -71,10 +73,10 @@ defeats it at denoising strength ≥0.3.
 ## Documentation
 
 - `docs/mvp-spec.md` — full specification
-- `docs/product-roadmap.md` — B2B/API direction
-- Research: `../vectomancy-docs/findings/` (Q-series attack studies)
+- `docs/product-roadmap.md` — product/B2B direction
+- `CHANGELOG.md` — release history
 
 ## License
 
-MIT. Learned mode embeds Adobe TrustMark models (MIT, downloaded separately
-from Adobe's CDN — not distributed with Sigil).
+Apache-2.0. Learned mode embeds Adobe TrustMark models (MIT, downloaded
+separately from Adobe's CDN — not distributed with Sigil).
