@@ -1,0 +1,12 @@
+name: "sigil"
+arch: "amd64"
+platform: "linux"
+version: 0.1.0
+section: "default"
+priority: "optional"
+maintainer: "sigil developers"
+description: "Sigil - Invisible structural watermark for images"
+license: "Apache-2.0"
+contents:
+  - src: ./sigil-linux-x86_64
+    dst: /usr/bin/sigil

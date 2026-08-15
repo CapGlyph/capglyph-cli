@@ -24,18 +24,25 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: sigil-linux-x86_64
+            arch: amd64
+            os_name: linux
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: sigil-linux-aarch64
+            arch: arm64
+            os_name: linux
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: sigil-windows-x86_64.exe
+            os_name: windows
           - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact_name: sigil-macos-x86_64
+            os_name: macos
           - os: macos-14
             target: aarch64-apple-darwin
             artifact_name: sigil-macos-aarch64
+            os_name: macos
 
     steps:
       - name: Checkout code
@@ -84,6 +91,23 @@ jobs:
         if: ${{ contains(matrix.target, 'windows') }}
         run: powershell Compress-Archive -Path "${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.artifact_name }}.zip"
 
+      - name: Package for Linux distributions (nfpm)
+        if: matrix.os_name == 'linux'
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            NFPM_ARCH="arm64"
+            PKG_ARCH="aarch64"
+          else
+            NFPM_ARCH="x86_64"
+            PKG_ARCH="x86_64"
+          fi
+          curl -sL https://github.com/goreleaser/nfpm/releases/download/v2.37.1/nfpm_2.37.1_Linux_${NFPM_ARCH}.tar.gz | tar xz nfpm
+          sed -i "s/amd64/${NFPM_ARCH}/g" nfpm.yaml
+          sed -i "s/sigil-linux-x86_64/${{ matrix.artifact_name }}/g" nfpm.yaml
+          ./nfpm pkg --packager deb --target sigil-linux-${PKG_ARCH}.deb
+          ./nfpm pkg --packager rpm --target sigil-linux-${PKG_ARCH}.rpm
+          ./nfpm pkg --packager archlinux --target sigil-linux-${PKG_ARCH}.pkg.tar.zst
+
       - name: Upload artifact
         # v5 runs on the Node24 runtime; v4.x still declares node20 and
         # triggers the deprecation warning.
@@ -93,6 +117,9 @@ jobs:
           path: |
             sigil/${{ matrix.artifact_name }}.tar.gz
             sigil/${{ matrix.artifact_name }}.zip
+            sigil/*.deb
+            sigil/*.rpm
+            sigil/*.pkg.tar.zst
 
   release-github:
     name: Create GitHub Release
@@ -113,3 +140,167 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+
+  publish-aur:
+    name: Publish to AUR
+    needs: release-github
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Install Arch build dependencies
+        run: |
+          pacman-key --init
+          pacman -Syu --noconfirm git openssh pacman-contrib sudo fakeroot binutils make gcc pkgconf
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+          mkdir -p /root/.ssh
+          cp -r ~/.ssh/* /root/.ssh/
+          chmod 700 /root/.ssh
+          chmod 600 /root/.ssh/*
+
+      - name: Configure Git
+        run: |
+          git config --system --add safe.directory '*'
+          git config --global user.name "Xuepoo (CI)"
+          git config --global user.email "xuepoofoter@gmail.com"
+
+      - name: Update AUR source package (sigil)
+        continue-on-error: true
+        run: |
+          git clone ssh://aur@aur.archlinux.org/sigil.git aur-src
+          cd aur-src
+          CLEAN_VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${CLEAN_VERSION#v}
+          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+          su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${CLEAN_VERSION}" || true
+          git push origin master
+
+      - name: Update AUR binary package (sigil-bin)
+        continue-on-error: true
+        run: |
+          git clone ssh://aur@aur.archlinux.org/sigil-bin.git aur-bin
+          cd aur-bin
+          CLEAN_VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${CLEAN_VERSION#v}
+          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+          su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${CLEAN_VERSION}" || true
+          git push origin master
+
+  sync-brew:
+    name: Sync Brew Formula
+    needs: release-github
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout tap repository
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Xuepoo/homebrew-tap
+          token: ${{ secrets.GH_PAT }}
+          path: homebrew-tap
+
+      - name: Update Formula
+        run: |
+          VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${VERSION#v}
+          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-x86_64.tar.gz"
+          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-aarch64.tar.gz"
+          SHA_INTEL=$(sha256sum sigil-macos-x86_64.tar.gz | awk '{print $1}')
+          SHA_ARM=$(sha256sum sigil-macos-aarch64.tar.gz | awk '{print $1}')
+
+          mkdir -p homebrew-tap/Formula
+          cat << EOF > homebrew-tap/Formula/sigil.rb
+          class Sigil < Formula
+            desc "Invisible structural watermark for images"
+            homepage "https://github.com/Xuepoo/sigil"
+            version "${CLEAN_VERSION}"
+            license "Apache-2.0"
+
+            if OS.mac? && Hardware::CPU.intel?
+              url "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-x86_64.tar.gz"
+              sha256 "${SHA_INTEL}"
+            elsif OS.mac? && Hardware::CPU.arm?
+              url "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-aarch64.tar.gz"
+              sha256 "${SHA_ARM}"
+            end
+
+            def install
+              bin.install "sigil"
+            end
+
+            test do
+              system "#{bin}/sigil", "--version"
+            end
+          end
+          EOF
+
+          cd homebrew-tap
+          git config user.name "Xuepoo (CI)"
+          git config user.email "xuepoofoter@gmail.com"
+          git add Formula/sigil.rb
+          git commit -m "Update Sigil to ${CLEAN_VERSION}" || true
+          git push origin main
+
+  sync-scoop:
+    name: Sync Scoop Manifest
+    needs: release-github
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout scoop repository
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Xuepoo/scoop-bucket
+          token: ${{ secrets.GH_PAT }}
+          path: scoop-bucket
+
+      - name: Update Manifest
+        run: |
+          VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${VERSION#v}
+          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-windows-x86_64.exe.zip"
+          SHA_WIN=$(sha256sum sigil-windows-x86_64.exe.zip | awk '{print $1}')
+
+          mkdir -p scoop-bucket/bucket
+          cat << EOF > scoop-bucket/bucket/sigil.json
+          {
+            "version": "${CLEAN_VERSION}",
+            "description": "Invisible structural watermark for images",
+            "homepage": "https://github.com/Xuepoo/sigil",
+            "license": "Apache-2.0",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-windows-x86_64.exe.zip",
+                "hash": "${SHA_WIN}"
+              }
+            },
+            "bin": "sigil-windows-x86_64.exe",
+            "checkver": {
+              "github": "https://github.com/Xuepoo/sigil"
+            }
+          }
+          EOF
+
+          cd scoop-bucket
+          git config user.name "Xuepoo (CI)"
+          git config user.email "xuepoofoter@gmail.com"
+          git add bucket/sigil.json
+          git commit -m "Update Sigil to ${CLEAN_VERSION}" || true
+          git push origin main
