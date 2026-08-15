@@ -172,14 +172,43 @@ jobs:
           git config --global user.email "xuepoofoter@gmail.com"
 
       - name: Update AUR source package (sigil)
-        continue-on-error: true
         run: |
           git clone ssh://aur@aur.archlinux.org/sigil.git aur-src
           cd aur-src
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
-          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+          # Bootstrap the PKGBUILD if the AUR repo is still empty (first
+          # release). Later runs only bump the version.
+          if [ ! -f PKGBUILD ]; then
+            cat << PKGEOF > PKGBUILD
+          # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
+          pkgname=sigil
+          pkgver=${CLEAN_VERSION}
+          pkgrel=1
+          pkgdesc="Invisible structural watermark for images"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/Xuepoo/sigil"
+          license=('Apache-2.0')
+          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/archive/refs/tags/v\$pkgver.tar.gz")
+          sha256sums=('SKIP')
+          makedepends=('cargo')
+
+          build() {
+            cd "sigil-\$pkgver"
+            cargo build --release --locked --features learned
+          }
+
+          package() {
+            cd "sigil-\$pkgver"
+            install -Dm755 "target/release/sigil" "\$pkgdir/usr/bin/sigil"
+          }
+          PKGEOF
+          else
+            sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+            sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          fi
+
           useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           chown -R builder:builder .
           su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
@@ -188,14 +217,36 @@ jobs:
           git push origin master
 
       - name: Update AUR binary package (sigil-bin)
-        continue-on-error: true
         run: |
           git clone ssh://aur@aur.archlinux.org/sigil-bin.git aur-bin
           cd aur-bin
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
-          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+          if [ ! -f PKGBUILD ]; then
+            cat << PKGEOF > PKGBUILD
+          # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
+          pkgname=sigil-bin
+          pkgver=${CLEAN_VERSION}
+          pkgrel=1
+          pkgdesc="Invisible structural watermark for images (binary release)"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/Xuepoo/sigil"
+          license=('Apache-2.0')
+          _arch="x86_64"
+          [ "\$CARCH" = "aarch64" ] && _arch="aarch64"
+          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/releases/download/v\$pkgver/sigil-linux-\${_arch}.tar.gz")
+          sha256sums=('SKIP')
+
+          package() {
+            install -Dm755 "sigil" "\$pkgdir/usr/bin/sigil"
+          }
+          PKGEOF
+          else
+            sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+            sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          fi
+
           useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           chown -R builder:builder .
           su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
