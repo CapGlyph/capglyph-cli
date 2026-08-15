@@ -21,6 +21,17 @@ pub const DWT_EMBED_STRENGTH: f32 = 8.0;
 /// 256.0 ensures ±delta >> typical group variance, making polarity reliable.
 pub const DWT_ID_EMBED_STRENGTH: f32 = 256.0;
 
+/// Flat-region LH coefficient threshold. Positions whose |LH coeff| is below
+/// this are in visually flat image areas (solid background, sky). Strong ±256
+/// embedding there produces visible ±128 spatial steps — so flat positions use
+/// the much smaller FLAT_ID_EMBED_STRENGTH instead.
+pub const FLAT_LH_THRESHOLD: f32 = 30.0;
+
+/// ID/sync embedding strength for flat regions. ±32 → spatial change ±16,
+/// invisible on solid backgrounds while still contributing polarity to the
+/// group-mean decoding.
+pub const FLAT_ID_EMBED_STRENGTH: f32 = 32.0;
+
 /// Sub-band used for embedding.
 pub const EMBED_BAND: WaveletBand = WaveletBand::LH;
 
@@ -125,7 +136,7 @@ pub fn embed(
             }
         }
 
-        // Layer 2: self-sync seed bits (±)
+        // Layer 2: self-sync seed bits (±) — flat positions use reduced strength
         let seed_bits: Vec<bool> = seed
             .to_le_bytes()
             .iter()
@@ -139,17 +150,24 @@ pub fn embed(
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                let delta = if seed_bits[bit_idx] {
-                    DWT_ID_EMBED_STRENGTH
+                // Check flatness BEFORE modification
+                let is_flat = band[by][bx].abs() < FLAT_LH_THRESHOLD;
+                let strength = if is_flat {
+                    FLAT_ID_EMBED_STRENGTH
                 } else {
-                    -DWT_ID_EMBED_STRENGTH
+                    DWT_ID_EMBED_STRENGTH
+                };
+                let delta = if seed_bits[bit_idx] {
+                    strength
+                } else {
+                    -strength
                 };
                 band[by][bx] += delta;
                 total_modified += 1;
             }
         }
 
-        // Layer 3: recipient ID bits (±)
+        // Layer 3: recipient ID bits (±) — flat positions use reduced strength
         for (i, &(bx, by)) in id_positions.iter().enumerate() {
             if i >= bits_needed {
                 break;
@@ -158,10 +176,16 @@ pub fn embed(
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                let delta = if id_bits[bit_idx] {
-                    DWT_ID_EMBED_STRENGTH
+                let is_flat = band[by][bx].abs() < FLAT_LH_THRESHOLD;
+                let strength = if is_flat {
+                    FLAT_ID_EMBED_STRENGTH
                 } else {
-                    -DWT_ID_EMBED_STRENGTH
+                    DWT_ID_EMBED_STRENGTH
+                };
+                let delta = if id_bits[bit_idx] {
+                    strength
+                } else {
+                    -strength
                 };
                 band[by][bx] += delta;
                 total_modified += 1;
