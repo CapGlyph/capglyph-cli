@@ -63,6 +63,9 @@ pub enum Commands {
     /// Download learned-mode ONNX models (TrustMark) into the model dir
     #[cfg(feature = "learned")]
     FetchModels(FetchModelsArgs),
+    /// Sign / verify C2PA content credentials (provenance manifests)
+    #[cfg(feature = "c2pa")]
+    C2pa(C2paArgs),
 }
 
 #[cfg(feature = "learned")]
@@ -71,6 +74,92 @@ pub struct FetchModelsArgs {
     /// Directory to store models (default: XDG data dir or $SIGIL_MODEL_DIR)
     #[arg(short, long)]
     pub model_dir: Option<PathBuf>,
+}
+
+// ─── c2pa ────────────────────────────────────────────────────────────────────
+
+#[cfg(feature = "c2pa")]
+#[derive(Args, Debug)]
+pub struct C2paArgs {
+    #[command(subcommand)]
+    pub command: C2paCommand,
+}
+
+#[cfg(feature = "c2pa")]
+#[derive(Subcommand, Debug)]
+pub enum C2paCommand {
+    /// Generate a self-signed ES256 certificate + private key (PEM)
+    Init(InitCertArgs),
+    /// Sign an image with a C2PA manifest (content credentials)
+    Sign(C2paSignArgs),
+    /// Read + verify the C2PA manifest of an image
+    Verify(C2paVerifyArgs),
+}
+
+#[cfg(feature = "c2pa")]
+#[derive(Args, Debug)]
+pub struct InitCertArgs {
+    /// Organization / common name for the certificate
+    #[arg(long)]
+    pub org: Option<String>,
+
+    /// Output directory for cert.pem + private.key (default: ./sigil-certs/)
+    #[arg(short, long)]
+    pub out: Option<PathBuf>,
+
+    /// Overwrite existing cert/key files
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[cfg(feature = "c2pa")]
+#[derive(Args, Debug)]
+pub struct C2paSignArgs {
+    /// Input image (JPEG or PNG)
+    pub input: PathBuf,
+
+    /// Signing certificate PEM
+    #[arg(long)]
+    pub cert: PathBuf,
+
+    /// Signing private key PEM
+    #[arg(long)]
+    pub pkey: PathBuf,
+
+    /// Output path (required — in-place signing is rejected)
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    /// Extra assertions JSON: {"label": <json value>, ...}
+    #[arg(long)]
+    pub manifest_json: Option<PathBuf>,
+
+    /// Digital source type for the c2pa.created action:
+    /// capture | algorithmic | composite | trained | or a full IPTC URI.
+    /// Default: capture. C2PA requires this field — pick the truthful value.
+    #[arg(long, default_value = "capture")]
+    pub source_type: String,
+
+    /// Recipient ID to record in the com.sigil.watermark assertion
+    /// (requires --mode)
+    #[arg(long, requires = "mode")]
+    pub recipient_id: Option<String>,
+
+    /// Watermark mode to record alongside --recipient-id
+    #[arg(long, requires = "recipient_id")]
+    pub mode: Option<EmbedMode>,
+
+    /// Sigil HMAC secret (marks the claim as keyed; the secret itself is
+    /// never stored in the manifest)
+    #[arg(long)]
+    pub key: Option<String>,
+}
+
+#[cfg(feature = "c2pa")]
+#[derive(Args, Debug)]
+pub struct C2paVerifyArgs {
+    /// Image to inspect
+    pub input: PathBuf,
 }
 
 // ─── embed ───────────────────────────────────────────────────────────────────

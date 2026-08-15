@@ -2,6 +2,8 @@
 pub mod batch;
 #[cfg(feature = "c2pa")]
 pub mod c2pa;
+#[cfg(feature = "c2pa")]
+pub mod c2pa_cli;
 pub mod cli;
 pub mod dct;
 pub mod dwt;

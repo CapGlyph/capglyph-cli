@@ -284,3 +284,81 @@ fn verify_image_signed_reports_org_and_claim() {
     let claim = report.watermark_claim.expect("claim present");
     assert_eq!(claim.mode, "dct");
 }
+
+#[test]
+fn cli_parses_c2pa_init_sign_verify() {
+    use clap::Parser;
+    use sigil::cli::{Cli, Commands};
+
+    let cli =
+        Cli::try_parse_from(["sigil", "c2pa", "init", "--org", "Acme", "--out", "/tmp/x"]).unwrap();
+    match &cli.command {
+        Commands::C2pa(c) => match &c.command {
+            sigil::cli::C2paCommand::Init(i) => {
+                assert_eq!(i.org.as_deref(), Some("Acme"));
+                assert_eq!(i.out.as_deref().unwrap().to_str(), Some("/tmp/x"));
+            }
+            _ => panic!("wrong subcommand"),
+        },
+        _ => panic!("wrong command"),
+    }
+
+    let cli = Cli::try_parse_from([
+        "sigil", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "-o", "out.png",
+    ])
+    .unwrap();
+    match &cli.command {
+        Commands::C2pa(c) => match &c.command {
+            sigil::cli::C2paCommand::Sign(s) => {
+                assert_eq!(s.input.to_str(), Some("in.png"));
+                assert!(s.recipient_id.is_none());
+                assert_eq!(s.source_type, "capture");
+            }
+            _ => panic!("wrong subcommand"),
+        },
+        _ => panic!("wrong command"),
+    }
+
+    let cli = Cli::try_parse_from(["sigil", "c2pa", "verify", "in.png"]).unwrap();
+    match &cli.command {
+        Commands::C2pa(c) => match &c.command {
+            sigil::cli::C2paCommand::Verify(v) => assert_eq!(v.input.to_str(), Some("in.png")),
+            _ => panic!("wrong subcommand"),
+        },
+        _ => panic!("wrong command"),
+    }
+}
+
+#[test]
+fn cli_c2pa_sign_recipient_id_requires_mode() {
+    use clap::Parser;
+    use sigil::cli::Cli;
+    assert!(Cli::try_parse_from([
+        "sigil",
+        "c2pa",
+        "sign",
+        "in.png",
+        "--cert",
+        "c.pem",
+        "--pkey",
+        "k.key",
+        "--recipient-id",
+        "bob",
+    ])
+    .is_err());
+    assert!(Cli::try_parse_from([
+        "sigil",
+        "c2pa",
+        "sign",
+        "in.png",
+        "--cert",
+        "c.pem",
+        "--pkey",
+        "k.key",
+        "--recipient-id",
+        "bob",
+        "--mode",
+        "dct",
+    ])
+    .is_ok());
+}
