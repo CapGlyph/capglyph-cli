@@ -54,9 +54,16 @@ trustmark = { version = "0.2", optional = true }
 directories = "6.0.0"
 ureq = "3.4.0"
 
+# C2PA content credentials (optional — pure-Rust crypto backend, no OpenSSL)
+c2pa = { version = "0.90", default-features = false, features = ["rust_native_crypto", "file_io"], optional = true }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
+x509-parser = { version = "0.18", optional = true }
+time = { version = "0.3", features = ["formatting"], optional = true }
+
 [features]
 default = []
 learned = ["dep:trustmark"]
+c2pa = ["dep:c2pa", "dep:rcgen", "dep:x509-parser", "dep:time"]
 
 [profile.release]
 opt-level = 3
