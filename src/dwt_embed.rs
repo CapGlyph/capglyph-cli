@@ -489,7 +489,7 @@ mod tests {
         let (w, h) = (512u32, 512u32);
         let mut img = ImageBuffer::from_fn(w, h, |x, y| {
             let v = ((x * 3 + y * 7 + x * y) % 255) as u8;
-            Rgb([v, (v + 40) % 255, (v + 80) % 255])
+            Rgb([v, (v as u32 + 40) as u8 % 255, (v as u32 + 80) as u8 % 255])
         });
 
         // Build a geometry with multiple crossing paths to generate many LH positions.
