@@ -55,11 +55,15 @@ pub fn fetch_models(dir: &Path) -> Result<()> {
         }
         let url = format!("{MODEL_CDN}/{name}");
         let tmp = target.with_extension("part");
-        let mut resp = ureq::get(&url)
+        let agent = http_agent()?;
+        let mut resp = agent
+            .get(&url)
             .call()
             .with_context(|| format!("Failed to download {url}"))?;
         let data = resp
             .body_mut()
+            .with_config()
+            .limit(128 * 1024 * 1024)
             .read_to_vec()
             .with_context(|| format!("Failed to read body of {url}"))?;
         std::fs::write(&tmp, &data).with_context(|| format!("Failed to write {:?}", tmp))?;
@@ -68,6 +72,27 @@ pub fn fetch_models(dir: &Path) -> Result<()> {
         tracing::info!("downloaded model {name}");
     }
     Ok(())
+}
+
+/// Build a ureq agent honoring HTTPS_PROXY/HTTP_PROXY/ALL_PROXY.
+///
+/// ureq does not read proxy environment variables by default; explicit
+/// wiring keeps `sigil fetch-models` working in proxied environments.
+fn http_agent() -> Result<ureq::Agent> {
+    let mut builder = ureq::Agent::config_builder();
+    let proxy = std::env::var("HTTPS_PROXY")
+        .or_else(|_| std::env::var("https_proxy"))
+        .or_else(|_| std::env::var("HTTP_PROXY"))
+        .or_else(|_| std::env::var("http_proxy"))
+        .or_else(|_| std::env::var("ALL_PROXY"))
+        .or_else(|_| std::env::var("all_proxy"))
+        .ok();
+    if let Some(p) = proxy {
+        if let Ok(proxy) = ureq::Proxy::new(&p) {
+            builder = builder.proxy(Some(proxy));
+        }
+    }
+    Ok(builder.build().into())
 }
 
 /// Load TrustMark with the given model directory.
