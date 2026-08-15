@@ -61,6 +61,8 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             save_geometry: None,
             from_geometry: None,
             recipient_id: args.recipient_id.clone(),
+            model_dir: None,
+            strength: 0.95,
             key: None,
         };
 

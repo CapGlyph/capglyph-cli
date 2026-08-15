@@ -10,6 +10,10 @@ pub enum EmbedMode {
     Dct,
     /// Stage 3: Haar DWT LH-band residual. Survives scale and moderate blur.
     Dwt,
+    /// Stage 4: learned TrustMark watermark (ONNX). Survives aggressive
+    /// ordinary edits (JPEG q30, blur σ2, scale 0.5×). Requires the
+    /// `learned` cargo feature and downloaded models.
+    Learned,
 }
 
 impl std::fmt::Display for EmbedMode {
@@ -18,6 +22,7 @@ impl std::fmt::Display for EmbedMode {
             EmbedMode::Alpha => write!(f, "alpha"),
             EmbedMode::Dct => write!(f, "dct"),
             EmbedMode::Dwt => write!(f, "dwt"),
+            EmbedMode::Learned => write!(f, "learned"),
         }
     }
 }
@@ -55,6 +60,17 @@ pub enum Commands {
     Batch(BatchArgs),
     /// Extract embedded recipient ID from watermarked image
     Extract(ExtractArgs),
+    /// Download learned-mode ONNX models (TrustMark) into the model dir
+    #[cfg(feature = "learned")]
+    FetchModels(FetchModelsArgs),
+}
+
+#[cfg(feature = "learned")]
+#[derive(Args, Debug)]
+pub struct FetchModelsArgs {
+    /// Directory to store models (default: XDG data dir or $SIGIL_MODEL_DIR)
+    #[arg(short, long)]
+    pub model_dir: Option<PathBuf>,
 }
 
 // ─── embed ───────────────────────────────────────────────────────────────────
@@ -118,6 +134,15 @@ pub struct EmbedArgs {
     /// identifying which recipient leaked a copy. The ID is mixed into the PRNG seed.
     #[arg(long)]
     pub recipient_id: Option<String>,
+
+    /// Learned-mode model directory (TrustMark ONNX files).
+    /// Default: $SIGIL_MODEL_DIR or the XDG data dir. Run `sigil fetch-models`.
+    #[arg(long)]
+    pub model_dir: Option<PathBuf>,
+
+    /// Learned-mode watermark strength (0–1, default 0.95).
+    #[arg(long, default_value_t = 0.95)]
+    pub strength: f32,
 }
 
 // ─── verify ──────────────────────────────────────────────────────────────────
@@ -152,6 +177,14 @@ pub struct VerifyArgs {
     /// positions and reports the secret layer mean signal.
     #[arg(long)]
     pub key: Option<String>,
+
+    /// Learned-mode model directory (TrustMark ONNX files).
+    #[arg(long)]
+    pub model_dir: Option<PathBuf>,
+
+    /// Recipient ID to compare against (learned mode).
+    #[arg(long)]
+    pub recipient_id: Option<String>,
 
     /// Print full signal statistics
     #[arg(long)]
@@ -256,4 +289,8 @@ pub struct ExtractArgs {
     /// Expected recipient ID length in characters (for bit extraction)
     #[arg(short = 'l', long, default_value_t = 16)]
     pub id_length: usize,
+
+    /// Learned-mode model directory (TrustMark ONNX files).
+    #[arg(long)]
+    pub model_dir: Option<PathBuf>,
 }

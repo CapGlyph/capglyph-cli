@@ -27,7 +27,38 @@ pub fn run(args: &ExtractArgs) -> Result<String> {
         crate::cli::EmbedMode::Alpha => {
             anyhow::bail!("extract is not supported for alpha mode (alpha mode does not carry recoverable bits)")
         }
+        crate::cli::EmbedMode::Learned => extract_from_learned(img, args),
     }
+}
+
+/// Learned-mode extraction: TrustMark decode → bitstring → ASCII bytes.
+#[cfg(feature = "learned")]
+fn extract_from_learned(img: image::DynamicImage, args: &ExtractArgs) -> Result<String> {
+    let dir = crate::learned::model_dir(args.model_dir.as_deref());
+    let bits = crate::learned::decode(img, &dir)?;
+    // Convert bitstring to ASCII: 8 bits per byte, stop at null byte.
+    let mut bytes = Vec::new();
+    for chunk in bits.as_bytes().chunks(8) {
+        let mut byte = 0u8;
+        for &c in chunk.iter() {
+            byte = (byte << 1) | if c == b'1' { 1 } else { 0 };
+        }
+        bytes.push(byte);
+    }
+    // Trim trailing nulls
+    while bytes.last() == Some(&0) {
+        bytes.pop();
+    }
+    let s = String::from_utf8(bytes)
+        .map_err(|_| anyhow::anyhow!("decoded bits are not valid ASCII"))?;
+    Ok(s)
+}
+
+#[cfg(not(feature = "learned"))]
+fn extract_from_learned(_img: image::DynamicImage, _args: &ExtractArgs) -> Result<String> {
+    anyhow::bail!(
+        "learned mode requires the `learned` cargo feature (build with --features learned)"
+    );
 }
 
 fn extract_from_dct(img: &image::RgbImage, id_length: usize, _w: u32, _h: u32) -> Result<String> {

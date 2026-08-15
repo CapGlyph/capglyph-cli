@@ -60,6 +60,8 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         from_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
     }
 }
 
@@ -98,6 +100,8 @@ fn verify_present_after_embed() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     })
     .unwrap();
@@ -117,6 +121,8 @@ fn verify_absent_for_plain_rgb() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     })
     .unwrap();
@@ -153,6 +159,8 @@ fn verify_absent_after_strip() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     })
     .unwrap();
@@ -192,6 +200,8 @@ fn from_geometry_matches_full_run() {
         save_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
     })
     .unwrap();
 
@@ -323,6 +333,8 @@ fn dct_watermark_survives_jpeg_q75() {
         threshold: 0.80,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -364,6 +376,8 @@ fn dct_watermark_degrades_at_jpeg_q50() {
         threshold: 0.80,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     });
     // No assertion: q50 behavior on tiny images is documented, not required.
@@ -399,6 +413,8 @@ fn alpha_watermark_destroyed_by_jpeg() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -423,6 +439,8 @@ fn dct_preserves_alpha_channel() {
         from_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
         color: false,
         save_geometry: None,
     };
@@ -459,6 +477,8 @@ fn dct_preserves_alpha_channel() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -528,6 +548,8 @@ fn dwt_watermark_embed_and_verify() {
         from_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&args).unwrap();
 
@@ -538,6 +560,8 @@ fn dwt_watermark_embed_and_verify() {
         threshold: 0.5,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -583,6 +607,8 @@ fn dwt_watermark_survives_jpeg_q75() {
         from_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&args).unwrap();
 
@@ -602,6 +628,8 @@ fn dwt_watermark_survives_jpeg_q75() {
         threshold: 0.2,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -647,6 +675,8 @@ fn dwt_watermark_survives_scale() {
         from_geometry: None,
         recipient_id: None,
         key: None,
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&args).unwrap();
 
@@ -667,6 +697,8 @@ fn dwt_watermark_survives_scale() {
         threshold: 0.3,
         mean_threshold: 4.0,
         key: None,
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -710,6 +742,8 @@ fn recipient_id_roundtrip() {
         from_geometry: None,
         recipient_id: Some("test_user_123".to_string()),
         key: None,
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&embed_args).unwrap();
 
@@ -719,6 +753,7 @@ fn recipient_id_roundtrip() {
         mode: EmbedMode::Dct,
         geometry: Some(geo_path),
         id_length: 13,
+        model_dir: None,
     };
     let extracted = extract::run(&extract_args).unwrap();
     assert_eq!(extracted, "test_user_123");
@@ -751,6 +786,8 @@ fn secret_layer_key_roundtrip() {
         from_geometry: None,
         recipient_id: None,
         key: Some("k_test_123".to_string()),
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&args).unwrap();
 
@@ -762,6 +799,8 @@ fn secret_layer_key_roundtrip() {
         threshold: 0.0001,
         mean_threshold: 4.0,
         key: Some("k_test_123".to_string()),
+        model_dir: None,
+        recipient_id: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -808,6 +847,8 @@ fn secret_layer_dct_roundtrip() {
         from_geometry: None,
         recipient_id: None,
         key: Some("dct_key_42".to_string()),
+        model_dir: None,
+        strength: 0.95,
     };
     embed::run(&args).unwrap();
 

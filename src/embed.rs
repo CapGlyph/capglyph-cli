@@ -212,6 +212,47 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
                 );
             }
         }
+        EmbedMode::Learned => {
+            #[cfg(not(feature = "learned"))]
+            {
+                anyhow::bail!(
+                    "learned mode requires the `learned` cargo feature (build with --features learned)"
+                );
+            }
+            #[cfg(feature = "learned")]
+            {
+                info!(
+                    "Mode: learned (TrustMark Q/BCH_5)  strength={}",
+                    args.strength
+                );
+                let rid = args.recipient_id.clone().ok_or_else(|| {
+                    anyhow::anyhow!("learned mode requires --recipient-id (61-bit payload)")
+                })?;
+                if rid.len() > 7 {
+                    anyhow::bail!(
+                        "recipient-id too long for learned mode (BCH_5 = 61 bits ≈ 7 ASCII bytes), got {} bytes",
+                        rid.len()
+                    );
+                }
+                let dir = crate::learned::model_dir(args.model_dir.as_deref());
+                let out = crate::learned::embed(src_img.clone(), &rid, &dir, args.strength)?;
+
+                let output = match &args.output {
+                    Some(p) => p.clone(),
+                    None => resolve_output(&args.input, None, "_sigil", "png"),
+                };
+                if output.extension().and_then(|e| e.to_str()) == Some("jpg") {
+                    out.to_rgb8()
+                        .save(&output)
+                        .with_context(|| format!("Failed to save JPEG: {:?}", output))?;
+                    println!("Watermark embedded [learned→jpg] → {:?}", output);
+                } else {
+                    out.save(&output)
+                        .with_context(|| format!("Failed to save output: {:?}", output))?;
+                    println!("Watermark embedded [learned, {rid}] → {:?}", output);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -252,6 +293,8 @@ pub fn extract_and_build_geometry(
         from_geometry: None,
         recipient_id: params.recipient_id.clone(),
         key: None,
+        model_dir: None,
+        strength: 0.95,
     };
 
     extract_geometry(&dyn_img, width, height, &args)

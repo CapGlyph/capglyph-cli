@@ -27,6 +27,7 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
         EmbedMode::Alpha => verify_alpha(&img, args)?,
         EmbedMode::Dct => verify_dct(&img, args)?,
         EmbedMode::Dwt => verify_dwt(&img, args)?,
+        EmbedMode::Learned => verify_learned(&img, args)?,
     };
 
     // Secret layer check (dct/dwt only): with a key, additionally verify the
@@ -38,7 +39,7 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
                 let secret_mean = match args.mode {
                     EmbedMode::Dct => crate::dct::verify_secret(&rgb, key),
                     EmbedMode::Dwt => crate::dwt_embed::verify_secret(&rgb, key),
-                    EmbedMode::Alpha => unreachable!(),
+                    EmbedMode::Alpha | EmbedMode::Learned => unreachable!(),
                 };
                 let secret_present = secret_mean >= SECRET_MEAN_THRESHOLD;
                 if secret_present {
@@ -51,7 +52,7 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
                     println!("  secret threshold:   {SECRET_MEAN_THRESHOLD:.1}");
                 }
             }
-            EmbedMode::Alpha => {}
+            EmbedMode::Alpha | EmbedMode::Learned => {}
         }
     }
 
@@ -360,4 +361,39 @@ pub fn extract_geometry_from_image(
         prng_seed: None,
         blocks: None,
     })
+}
+
+/// Learned-mode verification: TrustMark decode + bit accuracy vs the
+/// expected recipient id. Present if bit accuracy >= 0.9 (BCH_5 corrects
+/// up to 5 flipped bits of 100, so 95% raw accuracy decodes cleanly).
+#[cfg(feature = "learned")]
+fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
+    let rid = args
+        .recipient_id
+        .clone()
+        .or_else(|| std::env::var("SIGIL_RECIPIENT_ID").ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!("learned verify requires --recipient-id <id> to compare against")
+        })?;
+    let dir = crate::learned::model_dir(args.model_dir.as_deref());
+    let (acc, decoded, expected) = crate::learned::verify(img.clone(), &rid, &dir)?;
+    let present = acc >= 0.90;
+    if present {
+        println!("WATERMARK PRESENT (learned)");
+    } else {
+        println!("WATERMARK ABSENT (learned)");
+    }
+    if args.verbose {
+        println!("  bit accuracy: {:.2}%", acc * 100.0);
+        println!("  decoded bits: {decoded}");
+        println!("  expected bits: {expected}");
+    }
+    Ok(present)
+}
+
+#[cfg(not(feature = "learned"))]
+fn verify_learned(_img: &image::DynamicImage, _args: &VerifyArgs) -> Result<bool> {
+    anyhow::bail!(
+        "learned mode requires the `learned` cargo feature (build with --features learned)"
+    );
 }

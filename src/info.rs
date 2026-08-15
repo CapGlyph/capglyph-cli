@@ -11,6 +11,9 @@ pub fn info(args: &InfoArgs) -> Result<()> {
     let (w, h) = (img.width(), img.height());
 
     match args.mode {
+        EmbedMode::Learned => {
+            anyhow::bail!("info is not supported for learned mode");
+        }
         EmbedMode::Alpha => info_alpha(&img, w, h),
         EmbedMode::Dct => info_dct(&img, w, h, args.geometry.as_deref()),
         EmbedMode::Dwt => info_dwt(&img, w, h, args.geometry.as_deref()),

@@ -44,6 +44,15 @@ sha2 = "0.11.0"
 hmac = "0.13.0"
 digest = "0.11.3"
 
+# Learned watermark (TrustMark ONNX, optional — pulls in ONNX Runtime)
+trustmark = { version = "0.2", optional = true }
+directories = "6.0.0"
+ureq = "3.4.0"
+
+[features]
+default = []
+learned = ["dep:trustmark"]
+
 [profile.release]
 opt-level = 3
 lto = true

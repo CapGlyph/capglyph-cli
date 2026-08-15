@@ -32,6 +32,12 @@ fn main() -> anyhow::Result<()> {
             let id = extract::run(args)?;
             println!("{}", id);
         }
+        #[cfg(feature = "learned")]
+        Commands::FetchModels(args) => {
+            let dir = sigil::learned::model_dir(args.model_dir.as_deref());
+            sigil::learned::fetch_models(&dir)?;
+            println!("Models downloaded to {:?}", dir);
+        }
     }
 
     Ok(())

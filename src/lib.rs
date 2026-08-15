@@ -9,6 +9,8 @@ pub mod extract;
 pub mod geometry;
 pub mod info;
 pub mod keying;
+#[cfg(feature = "learned")]
+pub mod learned;
 pub mod signal;
 pub mod spread_spectrum;
 pub mod strip;
