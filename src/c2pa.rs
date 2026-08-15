@@ -71,6 +71,12 @@ pub fn init_cert(org: Option<&str>, out_dir: &Path, force: bool) -> Result<(Path
 ///
 /// `manifest_json` optionally merges extra assertions:
 /// `{"label": <json value>, ...}`.
+///
+/// `source_type` sets the `digitalSourceType` of the `c2pa.created` action:
+/// short tokens (`"capture"`, `"algorithmic"`, `"composite"`, `"trained"`) or
+/// a full digital source type URI (anything containing "http" is passed
+/// through as-is). Defaults to `digitalCapture` so signing never falsely
+/// attests AI origin.
 pub fn sign_image(
     input: &Path,
     output: &Path,
@@ -78,6 +84,7 @@ pub fn sign_image(
     pkey: &Path,
     claim: &WatermarkClaim,
     manifest_json: Option<&Path>,
+    source_type: Option<&str>,
 ) -> Result<()> {
     if input == output {
         return Err(anyhow!(
@@ -98,7 +105,7 @@ pub fn sign_image(
 
     let actions = c2pa::assertions::Actions::new().add_action(
         c2pa::assertions::Action::new(c2pa::assertions::c2pa_action::CREATED)
-            .set_source_type(c2pa::assertions::DigitalSourceType::AlgorithmicMedia),
+            .set_source_type(resolve_source_type(source_type)?),
     );
     builder
         .add_assertion(c2pa::assertions::Actions::LABEL_VERSIONED, &actions)
@@ -124,4 +131,27 @@ pub fn sign_image(
         .sign_file(signer.as_ref(), input, output)
         .with_context(|| format!("Failed to sign {input:?} -> {output:?}"))?;
     Ok(())
+}
+
+/// Resolve a `digitalSourceType` argument into the typed C2PA enum.
+///
+/// Short tokens map to the IPTC digital source types; anything containing
+/// "http" is treated as a full URI and passed through for deserialization.
+/// `None` defaults to `digitalCapture`.
+fn resolve_source_type(source_type: Option<&str>) -> Result<c2pa::assertions::DigitalSourceType> {
+    let token = source_type.unwrap_or("capture");
+    if token.contains("http") {
+        return serde_json::from_value(serde_json::Value::String(token.to_string()))
+            .with_context(|| format!("Unrecognized digital source type URI: {token}"));
+    }
+    match token {
+        "capture" => Ok(c2pa::assertions::DigitalSourceType::DigitalCapture),
+        "algorithmic" => Ok(c2pa::assertions::DigitalSourceType::AlgorithmicMedia),
+        "composite" => Ok(c2pa::assertions::DigitalSourceType::CompositeSynthetic),
+        "trained" => Ok(c2pa::assertions::DigitalSourceType::TrainedAlgorithmicMedia),
+        other => Err(anyhow!(
+            "unknown digital source type {other:?}; expected capture, algorithmic, composite, \
+             trained, or a full http(s) URI"
+        )),
+    }
 }

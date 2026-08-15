@@ -85,7 +85,7 @@ fn make_fixture_rgb(w: u32, h: u32) -> image::RgbImage {
     })
 }
 
-fn sign_roundtrip(ext: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+fn sign_roundtrip(ext: &str, source_type: Option<&str>) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let (cert, key) = init_cert(Some("Sigil Test"), dir.path(), false).unwrap();
 
@@ -99,13 +99,13 @@ fn sign_roundtrip(ext: &str) -> (tempfile::TempDir, std::path::PathBuf) {
         recipient_id: Some("alice01".to_string()),
         keyed: false,
     };
-    sign_image(&input, &output, &cert, &key, &claim, None).unwrap();
+    sign_image(&input, &output, &cert, &key, &claim, None, source_type).unwrap();
     (dir, output)
 }
 
 #[test]
 fn sign_image_png_produces_valid_manifest() {
-    let (_dir, output) = sign_roundtrip("png");
+    let (_dir, output) = sign_roundtrip("png", None);
     let reader = c2pa::Reader::from_context(c2pa::Context::new())
         .with_file(&output)
         .unwrap();
@@ -132,7 +132,7 @@ fn sign_image_png_produces_valid_manifest() {
 
 #[test]
 fn sign_image_jpeg_produces_valid_manifest() {
-    let (_dir, output) = sign_roundtrip("jpg");
+    let (_dir, output) = sign_roundtrip("jpg", None);
     let reader = c2pa::Reader::from_context(c2pa::Context::new())
         .with_file(&output)
         .unwrap();
@@ -159,7 +159,7 @@ fn sign_image_rejects_in_place_signing() {
         recipient_id: None,
         keyed: false,
     };
-    let err = sign_image(&input, &input, &cert, &key, &claim, None).unwrap_err();
+    let err = sign_image(&input, &input, &cert, &key, &claim, None, None).unwrap_err();
     assert!(err.to_string().contains("same path"));
 }
 
@@ -178,7 +178,7 @@ fn sign_image_wrong_key_fails_validation() {
         recipient_id: None,
         keyed: false,
     };
-    sign_image(&input, &output, &cert_a, &key_b, &claim, None).unwrap();
+    sign_image(&input, &output, &cert_a, &key_b, &claim, None, None).unwrap();
 
     let reader = c2pa::Reader::from_context(c2pa::Context::new())
         .with_file(&output)
@@ -196,4 +196,66 @@ fn sign_image_wrong_key_fails_validation() {
         failures.contains(&"claimSignature.mismatch"),
         "mismatched key must fail signature verification, failure codes: {failures:?}"
     );
+}
+
+fn signed_actions(output: &std::path::Path) -> c2pa::assertions::Actions {
+    let reader = c2pa::Reader::from_context(c2pa::Context::new())
+        .with_file(output)
+        .unwrap();
+    assert_eq!(reader.validation_state(), c2pa::ValidationState::Valid);
+    let manifest = reader.active_manifest().expect("manifest present");
+    manifest.find_assertion("c2pa.actions.v2").unwrap()
+}
+
+#[test]
+fn sign_image_defaults_to_digital_capture_no_false_ai_attestation() {
+    let (_dir, output) = sign_roundtrip("png", None);
+    let actions = signed_actions(&output);
+    assert_eq!(actions.actions().len(), 1);
+    let created = &actions.actions()[0];
+    assert_eq!(created.action(), "c2pa.created");
+    assert_eq!(
+        created.source_type(),
+        Some(&c2pa::assertions::DigitalSourceType::DigitalCapture),
+        "default source type must attest capture, never AI origin"
+    );
+}
+
+#[test]
+fn sign_image_honors_short_source_type_token() {
+    let (_dir, output) = sign_roundtrip("png", Some("algorithmic"));
+    let actions = signed_actions(&output);
+    assert_eq!(
+        actions.actions()[0].source_type(),
+        Some(&c2pa::assertions::DigitalSourceType::AlgorithmicMedia)
+    );
+}
+
+#[test]
+fn sign_image_accepts_full_source_type_uri() {
+    let (_dir, output) = sign_roundtrip(
+        "png",
+        Some("http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"),
+    );
+    let actions = signed_actions(&output);
+    assert_eq!(
+        actions.actions()[0].source_type(),
+        Some(&c2pa::assertions::DigitalSourceType::TrainedAlgorithmicMedia)
+    );
+}
+
+#[test]
+fn sign_image_rejects_unknown_source_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cert, key) = init_cert(None, dir.path(), false).unwrap();
+    let input = dir.path().join("input.png");
+    let output = dir.path().join("signed.png");
+    make_fixture_rgb(32, 32).save(&input).unwrap();
+    let claim = WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: None,
+        keyed: false,
+    };
+    let err = sign_image(&input, &output, &cert, &key, &claim, None, Some("bogus")).unwrap_err();
+    assert!(err.to_string().contains("unknown digital source type"));
 }
