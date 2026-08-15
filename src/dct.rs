@@ -41,6 +41,10 @@ pub const TARGET_V: usize = 3;
 pub const ID_TARGET_U: usize = 3;
 pub const ID_TARGET_V: usize = 4;
 
+/// Fixed magic seed for self-sync seed blocks (independent of image content).
+/// Used to generate the block list that carries the 64-bit geometry seed.
+pub const SEED_MAGIC: u64 = 0x5349_4749_4C5F_5345; // "SIGIL_SE"
+
 /// Embedding strength for recipient ID bits in DCT coefficient (3,4).
 /// Uses differential pair encoding: bit=1 → (A+delta, B-delta), bit=0 → (A-delta, B+delta)
 /// where A and B are two consecutive blocks.
@@ -99,58 +103,92 @@ pub fn embed(
     let mut blocks: Vec<_> = block_set.into_iter().collect();
     blocks.sort_unstable();
 
-    // Embed primary watermark + spread-spectrum recipient ID if provided
+    // Embed primary watermark + spread-spectrum recipient ID if provided.
+    // The ID bits are placed in PRNG-selected blocks (seeded by a
+    // watermark-stable image hash) so extraction can reconstruct the same
+    // block sequence without the geometry file.
     if let Some(id_str) = recipient_id {
         let id_bits = crate::spread_spectrum::str_to_bits(id_str);
         let redundancy = crate::spread_spectrum::REDUNDANCY;
         let bits_needed = id_bits.len() * redundancy;
 
-        if blocks.len() >= bits_needed {
-            // Embed both primary watermark and ID bits
-            for (i, &(bx, by)) in blocks.iter().enumerate() {
-                let ox = bx * 8;
-                let oy = by * 8;
-
-                // Determine ID bit for this block (if within range)
-                let id_delta = if i < bits_needed {
-                    let bit_idx = i / redundancy;
-                    if id_bits[bit_idx] {
-                        ID_EMBED_DELTA
-                    } else {
-                        -ID_EMBED_DELTA
-                    }
-                } else {
-                    0.0
-                };
-
-                for ch in 0..3usize {
-                    let mut block = extract_block(img, ox, oy, ch);
-                    dct8x8_forward(&mut block);
-                    block[TARGET_U][TARGET_V] += EMBED_DELTA;
-                    if id_delta != 0.0 {
-                        block[ID_TARGET_U][ID_TARGET_V] += id_delta;
-                    }
-                    dct8x8_inverse(&mut block);
-                    write_block(img, ox, oy, ch, &block);
-                }
-            }
-        } else {
-            // Not enough blocks — embed primary watermark only and warn
+        // Geometry-free ID block selection: stable seed → deterministic blocks
+        let seed = stable_seed(img);
+        let sync_blocks: Vec<(u32, u32)> = prng_block_list(SEED_MAGIC, iw, ih, 64 * 8);
+        let sync_set: std::collections::HashSet<(u32, u32)> = sync_blocks.iter().copied().collect();
+        // Exclude sync blocks from ID blocks to avoid coefficient interference
+        let mut id_blocks: Vec<(u32, u32)> =
+            prng_block_list(seed, iw, ih, bits_needed + sync_set.len())
+                .into_iter()
+                .filter(|b| !sync_set.contains(b))
+                .collect();
+        id_blocks.truncate(bits_needed);
+        if id_blocks.len() < bits_needed {
             tracing::warn!(
-                "Insufficient blocks ({}) for ID embedding (need {}). Embedding primary watermark only.",
-                blocks.len(),
+                "Insufficient PRNG blocks ({}) for ID embedding (need {}). Embedding primary watermark only.",
+                id_blocks.len(),
                 bits_needed
             );
-            for &(bx, by) in &blocks {
-                let ox = bx * 8;
-                let oy = by * 8;
-                for ch in 0..3usize {
-                    let mut block = extract_block(img, ox, oy, ch);
-                    dct8x8_forward(&mut block);
-                    block[TARGET_U][TARGET_V] += EMBED_DELTA;
-                    dct8x8_inverse(&mut block);
-                    write_block(img, ox, oy, ch, &block);
-                }
+        }
+
+        // 1. Embed primary watermark into all skeleton blocks
+        for &(bx, by) in &blocks {
+            let ox = bx * 8;
+            let oy = by * 8;
+            for ch in 0..3usize {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[TARGET_U][TARGET_V] += EMBED_DELTA;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
+            }
+        }
+
+        // 2. Embed self-sync seed bits (64 bits × 4 redundancy = 256 blocks)
+        //    at blocks derived from a FIXED magic constant — independent of
+        //    image content, so extraction can locate them without any prior.
+        let seed_bits: Vec<bool> = seed
+            .to_le_bytes()
+            .iter()
+            .flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1 == 1))
+            .collect();
+        for (i, &(bx, by)) in sync_blocks.iter().enumerate() {
+            let bit_idx = i / 8;
+            if bit_idx >= seed_bits.len() {
+                break;
+            }
+            let delta = if seed_bits[bit_idx] {
+                ID_EMBED_DELTA
+            } else {
+                -ID_EMBED_DELTA
+            };
+            let ox = bx * 8;
+            let oy = by * 8;
+            for ch in 0..3usize {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[ID_TARGET_U][ID_TARGET_V] += delta;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
+            }
+        }
+
+        // 3. Embed ID bits into PRNG-selected blocks (independent of skeleton)
+        for (i, &(bx, by)) in id_blocks.iter().take(bits_needed).enumerate() {
+            let bit_idx = i / redundancy;
+            let delta = if id_bits[bit_idx] {
+                ID_EMBED_DELTA
+            } else {
+                -ID_EMBED_DELTA
+            };
+            let ox = bx * 8;
+            let oy = by * 8;
+            for ch in 0..3usize {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[ID_TARGET_U][ID_TARGET_V] += delta;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
             }
         }
     } else {
@@ -488,6 +526,81 @@ pub fn image_seed(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> u64 {
     fnv1a_hash(sample)
 }
 
+/// Compute a watermark-stable image seed for geometry-free ID extraction.
+///
+/// Downscales the image to 16×16 with average pooling, quantizes each channel
+/// to 2 bits (4 levels, step 64), then FNV-1a hashes the result. This coarse
+/// quantization tolerates both DCT watermark modifications (±16 spatial ≈ ±2)
+/// and JPEG q≥75 recompression (spatial error ≈ ±8), keeping the seed invariant
+/// so ID extraction can reconstruct the same PRNG block list without the
+/// geometry file.
+pub fn stable_seed(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> u64 {
+    let (iw, ih) = img.dimensions();
+    let (gw, gh) = (16u32, 16u32);
+    let cell_w = (iw as f32 / gw as f32).max(1.0);
+    let cell_h = (ih as f32 / gh as f32).max(1.0);
+
+    let mut quantized = Vec::with_capacity((gw * gh * 3) as usize);
+    for gy in 0..gh {
+        for gx in 0..gw {
+            let x0 = (gx as f32 * cell_w) as u32;
+            let y0 = (gy as f32 * cell_h) as u32;
+            let x1 = ((gx + 1) as f32 * cell_w).min(iw as f32) as u32;
+            let y1 = ((gy + 1) as f32 * cell_h).min(ih as f32) as u32;
+
+            let mut r_sum = 0u64;
+            let mut g_sum = 0u64;
+            let mut b_sum = 0u64;
+            let mut count = 0u64;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let p = img.get_pixel(x, y);
+                    r_sum += p[0] as u64;
+                    g_sum += p[1] as u64;
+                    b_sum += p[2] as u64;
+                    count += 1;
+                }
+            }
+            let count = count.max(1);
+            let r = (r_sum / count / 64).min(3) as u8;
+            let g = (g_sum / count / 64).min(3) as u8;
+            let b = (b_sum / count / 64).min(3) as u8;
+            quantized.push(r);
+            quantized.push(g);
+            quantized.push(b);
+        }
+    }
+    fnv1a_hash(&quantized)
+}
+
+/// Generate a deterministic ordered block list from a seed.
+///
+/// Returns exactly `count` blocks in a reproducible order — used for
+/// recipient ID bit placement so extraction can reconstruct the same
+/// block sequence without the geometry file.
+pub fn prng_block_list(seed: u64, iw: u32, ih: u32, count: usize) -> Vec<(u32, u32)> {
+    let total_bx = iw / 8;
+    let total_by = ih / 8;
+    if total_bx == 0 || total_by == 0 {
+        return vec![];
+    }
+    let mut set = std::collections::HashSet::new();
+    let mut state = seed;
+    while set.len() < count {
+        state = lcg_next(state);
+        let bx = ((state >> 32) as u32) % total_bx;
+        let by = (state as u32) % total_by;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            set.insert((bx, by));
+        }
+    }
+    // Sort for cross-process deterministic ordering (HashSet iteration order is
+    // not stable across processes due to RandomState).
+    let mut list: Vec<(u32, u32)> = set.into_iter().collect();
+    list.sort_unstable();
+    list
+}
+
 /// Regenerate PRNG blocks from a seed (for verification).
 pub fn prng_blocks_from_seed(seed: u64, iw: u32, ih: u32) -> std::collections::HashSet<(u32, u32)> {
     let total_bx = iw / 8;
@@ -610,6 +723,76 @@ mod tests {
             max_diff < 5.0,
             "spatial perturbation {:.4} too large (limit 5.0 / 255)",
             max_diff
+        );
+    }
+}
+
+#[cfg(test)]
+mod stable_seed_tests {
+    use super::*;
+
+    #[test]
+    fn sync_blocks_recover_seed_after_embed() {
+        use crate::geometry::{AnalysisParams, PathEntry};
+        let (w, h) = (256u32, 256u32);
+        let mut img = ImageBuffer::from_fn(w, h, |x, y| {
+            let v = ((x * 3 + y * 7 + x * y) % 255) as u8;
+            Rgb([v, (v + 40) % 255, (v + 80) % 255])
+        });
+        let seed_before = stable_seed(&img);
+
+        let geo = GeometryFile {
+            version: 1,
+            original_width: w,
+            original_height: h,
+            analysis_params: AnalysisParams {
+                detail: 60,
+                min_path_len: 5,
+                chaikin_iters: 3,
+                color: false,
+            },
+            paths: vec![PathEntry {
+                color: None,
+                points: (0..64)
+                    .map(|i| [i as f64 * 4.0, (i as f64 * 3.0) % h as f64])
+                    .collect(),
+            }],
+            prng_seed: None,
+            blocks: None,
+        };
+
+        embed(&mut img, &geo, Some("test")).unwrap();
+
+        // Recover the seed from self-sync blocks (magic-constant located)
+        let sync_blocks = prng_block_list(SEED_MAGIC, w, h, 64 * 8);
+        let mut sync_coeffs = Vec::with_capacity(64 * 8);
+        for &(bx, by) in &sync_blocks {
+            let mut sum = 0.0f32;
+            for ch in 0..3 {
+                let mut block = extract_block(&img, bx * 8, by * 8, ch);
+                dct8x8_forward(&mut block);
+                sum += block[ID_TARGET_U][ID_TARGET_V];
+            }
+            sync_coeffs.push(sum / 3.0);
+        }
+        let global_mean = sync_coeffs.iter().sum::<f32>() / sync_coeffs.len() as f32;
+        let mut recovered_bits = Vec::with_capacity(64);
+        for bit_idx in 0..64 {
+            let group_mean: f32 = sync_coeffs[bit_idx * 8..bit_idx * 8 + 8]
+                .iter()
+                .sum::<f32>()
+                / 8.0;
+            recovered_bits.push(group_mean > global_mean);
+        }
+        let mut recovered_bytes = [0u8; 8];
+        for (i, chunk) in recovered_bits.chunks(8).enumerate() {
+            recovered_bytes[i] = chunk.iter().fold(0u8, |acc, &bit| (acc << 1) | bit as u8);
+        }
+        let seed_after = u64::from_le_bytes(recovered_bytes);
+
+        assert_eq!(
+            seed_before, seed_after,
+            "self-sync blocks must recover the original embed seed"
         );
     }
 }

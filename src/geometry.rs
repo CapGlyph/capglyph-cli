@@ -69,4 +69,28 @@ impl GeometryFile {
     pub fn to_json(&self) -> anyhow::Result<Vec<u8>> {
         Ok(serde_json::to_vec_pretty(self)?)
     }
+
+    /// Compute a stable 64-bit hash of the geometry.
+    ///
+    /// Uses sorted path endpoints (first/last point of each path) rather than
+    /// full point lists — endpoints survive minor coordinate drift from
+    /// RDP/Chaikin re-extraction better than interior points.
+    pub fn compute_geometry_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut endpoints: Vec<(u32, u32)> = Vec::new();
+        for path in &self.paths {
+            if let (Some(first), Some(last)) = (path.points.first(), path.points.last()) {
+                endpoints.push((first[0] as u32, first[1] as u32));
+                endpoints.push((last[0] as u32, last[1] as u32));
+            }
+        }
+        endpoints.sort_unstable();
+        endpoints.dedup();
+
+        let mut hasher = DefaultHasher::new();
+        endpoints.hash(&mut hasher);
+        hasher.finish()
+    }
 }

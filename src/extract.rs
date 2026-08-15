@@ -17,73 +17,91 @@ pub fn run(args: &ExtractArgs) -> Result<String> {
     let img = image::open(&args.input)
         .with_context(|| format!("Failed to open image: {:?}", args.input))?;
 
-    let geometry = match &args.geometry {
-        Some(p) => {
-            let json = std::fs::read_to_string(p)
-                .with_context(|| format!("Failed to read geometry file: {:?}", p))?;
-            serde_json::from_str::<GeometryFile>(&json).context("Failed to parse geometry JSON")?
-        }
-        None => {
-            info!("No geometry file — re-extracting skeleton from image");
-            crate::verify::extract_geometry_from_image(&img)?
-        }
-    };
-
     let rgb = img.to_rgb8();
     let (w, h) = rgb.dimensions();
 
     match args.mode {
-        crate::cli::EmbedMode::Dct => extract_from_dct(&rgb, &geometry, args.id_length, w, h),
-        crate::cli::EmbedMode::Dwt => extract_from_dwt(&rgb, &geometry, args.id_length, w, h),
+        // DCT mode is geometry-free: the seed is recovered from self-sync blocks.
+        crate::cli::EmbedMode::Dct => extract_from_dct(&rgb, args.id_length, w, h),
+        // DWT mode needs geometry (position list), optionally from file.
+        crate::cli::EmbedMode::Dwt => {
+            let geometry = match &args.geometry {
+                Some(p) => {
+                    let json = std::fs::read_to_string(p)
+                        .with_context(|| format!("Failed to read geometry file: {:?}", p))?;
+                    serde_json::from_str::<GeometryFile>(&json)
+                        .context("Failed to parse geometry JSON")?
+                }
+                None => {
+                    info!("No geometry file — re-extracting skeleton from image");
+                    crate::verify::extract_geometry_from_image(&img)?
+                }
+            };
+            extract_from_dwt(&rgb, &geometry, args.id_length, w, h)
+        }
         crate::cli::EmbedMode::Alpha => {
             anyhow::bail!("extract is not supported for alpha mode (alpha mode does not carry recoverable bits)")
         }
     }
 }
 
-fn extract_from_dct(
-    img: &image::RgbImage,
-    geometry: &GeometryFile,
-    id_length: usize,
-    _w: u32,
-    _h: u32,
-) -> Result<String> {
-    use crate::dct::{dct8x8_forward, extract_block, prng_blocks, ID_TARGET_U, ID_TARGET_V};
+fn extract_from_dct(img: &image::RgbImage, id_length: usize, _w: u32, _h: u32) -> Result<String> {
+    use crate::dct::{
+        dct8x8_forward, extract_block, prng_block_list, ID_TARGET_U, ID_TARGET_V, SEED_MAGIC,
+    };
     use crate::spread_spectrum::{bits_to_str, REDUNDANCY};
 
     let (iw, ih) = img.dimensions();
 
-    // Use stored blocks if available (exact embed order), otherwise re-extract from paths
-    let blocks: Vec<(u32, u32)> = if let Some(ref stored_blocks) = geometry.blocks {
-        stored_blocks.clone()
-    } else {
-        // Fallback: re-extract skeleton blocks from geometry paths
-        let mut skeleton_blocks: std::collections::HashSet<(u32, u32)> =
-            std::collections::HashSet::new();
-        for path in &geometry.paths {
-            for point in &path.points {
-                let (px, py) = (point[0] as u32, point[1] as u32);
-                let bx = px / 8;
-                let by = py / 8;
-                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                    skeleton_blocks.insert((bx, by));
-                }
-            }
-        }
+    // Step 1: recover the 64-bit ID block seed from self-sync blocks.
+    // These blocks are located via a fixed magic constant, independent of
+    // image content — so no geometry file or prior is needed.
+    let sync_blocks = prng_block_list(SEED_MAGIC, iw, ih, 64 * 8);
+    if sync_blocks.len() < 64 * 8 {
+        anyhow::bail!(
+            "Image too small for self-sync seed blocks ({} < 256)",
+            sync_blocks.len()
+        );
+    }
 
-        if skeleton_blocks.is_empty() {
-            // Fallback: PRNG blocks
-            let mut v: Vec<_> = prng_blocks(img, iw, ih, None).into_iter().collect();
-            v.sort_unstable();
-            v
-        } else {
-            let mut v: Vec<_> = skeleton_blocks.into_iter().collect();
-            v.sort_unstable();
-            v
-        }
+    let read_coeffs = |blocks: &[(u32, u32)], count: usize| -> Vec<f32> {
+        blocks
+            .iter()
+            .take(count)
+            .map(|(bx, by)| {
+                let mut sum = 0.0f32;
+                for ch in 0..3 {
+                    let mut block = extract_block(img, bx * 8, by * 8, ch);
+                    dct8x8_forward(&mut block);
+                    sum += block[ID_TARGET_U][ID_TARGET_V];
+                }
+                sum / 3.0
+            })
+            .collect()
     };
 
+    let sync_coeffs = read_coeffs(&sync_blocks, 64 * 8);
+    let sync_global_mean = sync_coeffs.iter().sum::<f32>() / sync_coeffs.len() as f32;
+    let mut seed_bits = Vec::with_capacity(64);
+    for bit_idx in 0..64 {
+        let start = bit_idx * 8;
+        let group_mean: f32 = sync_coeffs[start..start + 8].iter().sum::<f32>() / 8.0;
+        seed_bits.push(group_mean > sync_global_mean);
+    }
+    let mut seed_bytes = [0u8; 8];
+    for (i, chunk) in seed_bits.chunks(8).enumerate() {
+        seed_bytes[i] = chunk.iter().fold(0u8, |acc, &bit| (acc << 1) | bit as u8);
+    }
+    let seed = u64::from_le_bytes(seed_bytes);
+
+    // Step 2: reconstruct the ID block list from the recovered seed
+    // (excluding sync blocks, matching the embed-time exclusion)
     let bits_needed = id_length * 8 * REDUNDANCY;
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_blocks.iter().copied().collect();
+    let blocks: Vec<(u32, u32)> = prng_block_list(seed, iw, ih, bits_needed + sync_set.len())
+        .into_iter()
+        .filter(|b| !sync_set.contains(b))
+        .collect();
     if blocks.len() < bits_needed {
         anyhow::bail!(
             "Insufficient blocks ({}) to extract {} bytes with redundancy={}",
@@ -93,38 +111,15 @@ fn extract_from_dct(
         );
     }
 
-    // Extract ID coefficients from ID_TARGET position
-    let id_coeffs: Vec<f32> = blocks
-        .iter()
-        .take(bits_needed)
-        .map(|(bx, by)| {
-            let mut sum = 0.0f32;
-            for ch in 0..3 {
-                let mut block = extract_block(img, bx * 8, by * 8, ch);
-                dct8x8_forward(&mut block);
-                sum += block[ID_TARGET_U][ID_TARGET_V];
-            }
-            sum / 3.0
-        })
-        .collect();
-
-    // Decode using differential pair encoding
+    // Step 3: decode ID bits (group mean vs global mean)
+    let id_coeffs = read_coeffs(&blocks, bits_needed);
+    let global_mean = id_coeffs.iter().sum::<f32>() / id_coeffs.len() as f32;
     let mut decoded_bits = Vec::new();
     for bit_idx in 0..(id_length * 8) {
         let start = bit_idx * REDUNDANCY;
         let end = (start + REDUNDANCY).min(id_coeffs.len());
-
-        // Majority vote across redundancy group
-        let mut ones = 0;
-        let mut zeros = 0;
-        for &coeff in &id_coeffs[start..end] {
-            if coeff > 0.0 {
-                ones += 1;
-            } else {
-                zeros += 1;
-            }
-        }
-        decoded_bits.push(ones > zeros);
+        let group_mean: f32 = id_coeffs[start..end].iter().sum::<f32>() / (end - start) as f32;
+        decoded_bits.push(group_mean > global_mean);
     }
 
     let decoded = bits_to_str(&decoded_bits)?;
