@@ -85,7 +85,9 @@ jobs:
         run: powershell Compress-Archive -Path "${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.artifact_name }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4.6.2
+        # v5 runs on the Node24 runtime; v4.x still declares node20 and
+        # triggers the deprecation warning.
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact_name }}
           path: |
