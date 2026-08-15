@@ -366,6 +366,11 @@ pub fn extract_geometry_from_image(
 /// Learned-mode verification: TrustMark decode + bit accuracy vs the
 /// expected recipient id. Present if bit accuracy >= 0.9 (BCH_5 corrects
 /// up to 5 flipped bits of 100, so 95% raw accuracy decodes cleanly).
+///
+/// With `--key`: the payload was XOR-encrypted at embed time; decode is
+/// XORed back with the HMAC keystream before comparing, which also proves
+/// attribution (an attacker without the key cannot forge a valid keyed
+/// payload for a known ID).
 #[cfg(feature = "learned")]
 fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let rid = args
@@ -376,7 +381,27 @@ fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> 
             anyhow::anyhow!("learned verify requires --recipient-id <id> to compare against")
         })?;
     let dir = crate::learned::model_dir(args.model_dir.as_deref());
-    let (acc, decoded, expected) = crate::learned::verify(img.clone(), &rid, &dir)?;
+    let decoded = crate::learned::decode(img.clone(), &dir)?;
+    let expected = match &args.key {
+        Some(k) => {
+            let seed = crate::learned::image_seed(&img.to_rgb8());
+            crate::learned::payload_bits(&rid, Some(k), seed)
+        }
+        None => crate::learned::id_to_bitstring(&rid),
+    };
+    let n = decoded.len().min(expected.len());
+    let matches = decoded
+        .as_bytes()
+        .iter()
+        .zip(expected.as_bytes().iter())
+        .take(n)
+        .filter(|(a, b)| a == b)
+        .count();
+    let acc = if n == 0 {
+        0.0
+    } else {
+        matches as f64 / n as f64
+    };
     let present = acc >= 0.90;
     if present {
         println!("WATERMARK PRESENT (learned)");

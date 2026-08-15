@@ -235,7 +235,10 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
                     );
                 }
                 let dir = crate::learned::model_dir(args.model_dir.as_deref());
-                let out = crate::learned::embed(src_img.clone(), &rid, &dir, args.strength)?;
+                let seed = crate::learned::image_seed(&src_img.to_rgb8());
+                let payload = crate::learned::payload_bits(&rid, args.key.as_deref(), seed);
+                let out =
+                    crate::learned::embed_bits(src_img.clone(), &payload, &dir, args.strength)?;
 
                 let output = match &args.output {
                     Some(p) => p.clone(),

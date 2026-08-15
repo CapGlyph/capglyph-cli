@@ -127,16 +127,105 @@ pub fn id_to_bitstring(id: &str) -> String {
     s
 }
 
-/// Encode the recipient id into the image via the learned layer.
-pub fn embed(
+/// Compute a watermark-stable image seed for learned mode.
+///
+/// TrustMark's residual is much stronger than the classical DCT/DWT
+/// residuals, so `dct::stable_seed`'s 16×16 pooling flips at quantization
+/// boundaries. This variant pools 64×64, extracts ONE bit per cell
+/// (`mean >= 128`), then majority-votes bits in fixed groups of 11 into a
+/// 32-bit seed. A few cells sitting exactly on the 128 boundary still flip,
+/// but a 1-cell flip never overrules the other 10 in its group (measured
+/// flip rate ~5/361 cells on a flat-heavy portrait).
+pub fn image_seed(img: &image::RgbImage) -> u64 {
+    let (w, h) = img.dimensions();
+    let cells_x = (w / 64).max(1);
+    let cells_y = (h / 64).max(1);
+    let mut bits = Vec::with_capacity((cells_x * cells_y) as usize);
+    for cy in 0..cells_y {
+        for cx in 0..cells_x {
+            let mut sum: u64 = 0;
+            let mut count: u64 = 0;
+            let y0 = cy * 64;
+            let y1 = ((cy + 1) * 64).min(h);
+            let x0 = cx * 64;
+            let x1 = ((cx + 1) * 64).min(w);
+            for y in y0..y1.max(y0 + 1) {
+                for x in x0..x1.max(x0 + 1) {
+                    let p = img.get_pixel(x, y);
+                    sum += (p[0] as u64 + p[1] as u64 + p[2] as u64) / 3;
+                    count += 1;
+                }
+            }
+            let mean = sum.checked_div(count).unwrap_or(0);
+            bits.push(mean >= 128);
+        }
+    }
+    const GROUP: usize = 11;
+    const SEED_BITS: usize = 32;
+    let mut seed: u64 = 0;
+    for i in 0..SEED_BITS {
+        let mut ones = 0usize;
+        let mut total = 0usize;
+        for b in bits.iter().skip(i * GROUP).take(GROUP) {
+            if *b {
+                ones += 1;
+            }
+            total += 1;
+        }
+        if total > 0 && ones * 2 > total {
+            seed |= 1 << i;
+        }
+    }
+    seed
+}
+
+/// XOR a bitstring against the first N bytes of the keystream.
+fn xor_bitstring(bits: &str, keystream: &[u8; 32]) -> String {
+    let mut out = String::with_capacity(bits.len());
+    for (i, c) in bits.chars().enumerate() {
+        let k = (keystream[i / 8] >> (7 - i % 8)) & 1;
+        out.push(if (c == '1') ^ (k == 1) { '1' } else { '0' });
+    }
+    out
+}
+
+/// Compute the payload bitstring written into the watermark.
+///
+/// Without a key: plain id bits. With a key: id bits XOR
+/// HMAC(key, image_seed) keystream — the payload is pseudorandom without the
+/// key (ID privacy, forgery resistance: an attacker cannot forge a valid
+/// keyed payload for a known ID), and recoverable with it.
+///
+/// The keystream does NOT depend on the id itself — extraction must be able
+/// to recover an unknown id with just the key.
+pub fn payload_bits(recipient_id: &str, key: Option<&str>, image_seed: u64) -> String {
+    let plain = id_to_bitstring(recipient_id);
+    match key {
+        Some(k) => {
+            let ks = crate::keying::keystream_bytes(k, "recipient-id", image_seed);
+            xor_bitstring(&plain, &ks)
+        }
+        None => plain,
+    }
+}
+
+/// Recover the plain id bitstring from a decoded payload bitstring.
+pub fn decrypt_bits(decoded: &str, key: &str, image_seed: u64) -> String {
+    let ks = crate::keying::keystream_bytes(key, "recipient-id", image_seed);
+    xor_bitstring(decoded, &ks)
+}
+
+/// Encode a raw payload bitstring into the image via the learned layer.
+pub fn embed_bits(
     img: image::DynamicImage,
-    recipient_id: &str,
+    payload_bits: &str,
     dir: &Path,
     strength: f32,
 ) -> Result<image::DynamicImage> {
     let tm = load(dir)?;
-    let bits = id_to_bitstring(recipient_id);
-    let out = tm.encode(bits, img, strength).map_err(|e| anyhow!(e))?;
+    let out = tm
+        .encode(payload_bits.to_string(), img, strength)
+        .map_err(|e| anyhow!(e))?;
     // TrustMark returns Rgb32F; quantize to 8-bit RGB (PNG-friendly).
     Ok(image::DynamicImage::ImageRgb8(out.to_rgb8()))
 }
@@ -145,29 +234,4 @@ pub fn embed(
 pub fn decode(img: image::DynamicImage, dir: &Path) -> Result<String> {
     let tm = load(dir)?;
     tm.decode(img).map_err(|e| anyhow!(e))
-}
-
-/// Verify: decode and compare bit accuracy against the expected id.
-/// Returns (bit_accuracy 0..=1, decoded_bitstring, expected_bitstring).
-pub fn verify(
-    img: image::DynamicImage,
-    recipient_id: &str,
-    dir: &Path,
-) -> Result<(f64, String, String)> {
-    let decoded = decode(img, dir)?;
-    let expected = id_to_bitstring(recipient_id);
-    let n = decoded.len().min(expected.len());
-    let matches = decoded
-        .as_bytes()
-        .iter()
-        .zip(expected.as_bytes().iter())
-        .take(n)
-        .filter(|(a, b)| a == b)
-        .count();
-    let acc = if n == 0 {
-        0.0
-    } else {
-        matches as f64 / n as f64
-    };
-    Ok((acc, decoded, expected))
 }

@@ -754,6 +754,7 @@ fn recipient_id_roundtrip() {
         geometry: Some(geo_path),
         id_length: 13,
         model_dir: None,
+        key: None,
     };
     let extracted = extract::run(&extract_args).unwrap();
     assert_eq!(extracted, "test_user_123");

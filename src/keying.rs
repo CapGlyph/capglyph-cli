@@ -32,3 +32,19 @@ pub fn key_seed(secret_key: &str, image_hash: u64) -> u64 {
     let digest = mac.finalize().into_bytes();
     u64::from_le_bytes(digest[..8].try_into().expect("32-byte digest"))
 }
+
+/// Derive a 32-byte keystream for encrypting learned-mode payload bits.
+///
+/// `context` separates this derivation from `key_seed` (different domain
+/// strings). The stream is XORed with the recipient-id bitstring so that
+/// the payload is pseudorandom without the key (ID privacy + forgery
+/// resistance), and recoverable with it.
+pub fn keystream_bytes(secret_key: &str, context: &str, image_hash: u64) -> [u8; 32] {
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(secret_key.as_bytes())
+        .expect("HMAC accepts any key");
+    mac.update(b"sigil-learned-keystream-v1");
+    mac.update(context.as_bytes());
+    mac.update(&image_hash.to_le_bytes());
+    let digest = mac.finalize().into_bytes();
+    digest[..32].try_into().expect("32-byte digest")
+}

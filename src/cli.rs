@@ -293,4 +293,9 @@ pub struct ExtractArgs {
     /// Learned-mode model directory (TrustMark ONNX files).
     #[arg(long)]
     pub model_dir: Option<PathBuf>,
+
+    /// Secret key (learned mode): decrypts the keyed payload.
+    /// Required when embed used --key.
+    #[arg(long)]
+    pub key: Option<String>,
 }

@@ -32,10 +32,19 @@ pub fn run(args: &ExtractArgs) -> Result<String> {
 }
 
 /// Learned-mode extraction: TrustMark decode → bitstring → ASCII bytes.
+/// With `--key`, the payload is XOR-decrypted with the HMAC keystream
+/// before byte packing (payload was keyed at embed time).
 #[cfg(feature = "learned")]
 fn extract_from_learned(img: image::DynamicImage, args: &ExtractArgs) -> Result<String> {
     let dir = crate::learned::model_dir(args.model_dir.as_deref());
-    let bits = crate::learned::decode(img, &dir)?;
+    let bits = crate::learned::decode(img.clone(), &dir)?;
+    let bits = match &args.key {
+        Some(k) => {
+            let seed = crate::learned::image_seed(&img.to_rgb8());
+            crate::learned::decrypt_bits(&bits, k, seed)
+        }
+        None => bits,
+    };
     // Convert bitstring to ASCII: 8 bits per byte, stop at null byte.
     let mut bytes = Vec::new();
     for chunk in bits.as_bytes().chunks(8) {
