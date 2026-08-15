@@ -14,6 +14,9 @@ jobs:
   build-and-release:
     name: Build Binary for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: sigil
     strategy:
       fail-fast: false
       matrix:
@@ -37,13 +40,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          path: sigil
 
       # Sigil depends on the vectomancy crates via path deps (../vectomancy).
       - name: Checkout vectomancy (path dependency)
         uses: actions/checkout@v7.0.1
         with:
           repository: Xuepoo/vectomancy
-          path: ../vectomancy
+          path: vectomancy
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -55,9 +60,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-            ../vectomancy/target
-          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '../vectomancy/Cargo.lock') }}
+            sigil/target
+            vectomancy/target
+          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: release-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Build release (learned feature)
@@ -84,8 +89,8 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            ${{ matrix.artifact_name }}.tar.gz
-            ${{ matrix.artifact_name }}.zip
+            sigil/${{ matrix.artifact_name }}.tar.gz
+            sigil/${{ matrix.artifact_name }}.zip
 
   release-github:
     name: Create GitHub Release
