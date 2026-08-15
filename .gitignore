@@ -1,3 +1,5 @@
 /target
 .carryctx/config.local.toml
 .worktrees/
+*.part
+.DS_Store

@@ -2,7 +2,12 @@
 name = "sigil"
 version = "0.1.0"
 edition = "2021"
-description = "Invisible structural watermark for images — human-visible, machine-detectable"
+description = "Invisible structural watermark for images — human-invisible, machine-detectable"
+license = "Apache-2.0"
+repository = "https://github.com/Xuepoo/sigil"
+keywords = ["watermark", "forensics", "image", "security", "tracing"]
+categories = ["command-line-utilities", "multimedia::images"]
+readme = "README.md"
 
 [lib]
 name = "sigil"

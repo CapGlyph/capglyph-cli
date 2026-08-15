@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sigil depends on the vectomancy crates via path deps (../vectomancy).
+      # Check out the vectomancy repo next to the sigil workspace.
+      - uses: actions/checkout@v4
+        with:
+          repository: Xuepoo/vectomancy
+          path: ../vectomancy
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            ../vectomancy
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (default features)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy (learned feature)
+        run: cargo clippy --features learned --all-targets -- -D warnings
+
+      - name: Test (default features)
+        run: cargo test
+
+      - name: Test (learned feature)
+        run: cargo test --features learned
+
+  test-learned-systems:
+    name: Test learned on macOS & Windows
+    strategy:
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Xuepoo/vectomancy
+          path: ../vectomancy
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            ../vectomancy
+      - name: Test (learned feature)
+        run: cargo test --features learned

@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact: sigil-linux-x86_64
+          - os: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            artifact: sigil-linux-aarch64
+          - os: macos-14
+            target: x86_64-apple-darwin
+            artifact: sigil-macos-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: sigil-macos-aarch64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            artifact: sigil-windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Xuepoo/vectomancy
+          path: ../vectomancy
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compile deps (aarch64-linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            ../vectomancy
+
+      - name: Build (release, learned feature)
+        run: cargo build --release --features learned --target ${{ matrix.target }}
+
+      - name: Package binary
+        shell: bash
+        run: |
+          cd "target/${{ matrix.target }}/release"
+          case "${{ matrix.target }}" in
+            *windows*)
+              zip "${{ matrix.artifact }}.zip" sigil.exe
+              ;;
+            *)
+              tar -czf "${{ matrix.artifact }}.tar.gz" sigil
+              ;;
+          esac
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            target/${{ matrix.target }}/release/*.tar.gz
+            target/${{ matrix.target }}/release/*.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
