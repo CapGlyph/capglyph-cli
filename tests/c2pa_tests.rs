@@ -11,6 +11,9 @@ fn watermark_claim_serde_roundtrip() {
         keyed: true,
     };
     let json = serde_json::to_vec(&claim).unwrap();
+    // Some recipient_id must be present in the JSON
+    let raw = std::str::from_utf8(&json).unwrap();
+    assert!(raw.contains("recipient_id"));
     let back: WatermarkClaim = serde_json::from_slice(&json).unwrap();
     assert_eq!(back.mode, "dct");
     assert_eq!(back.recipient_id.as_deref(), Some("alice01"));
@@ -25,6 +28,9 @@ fn watermark_claim_none_fields() {
         keyed: false,
     };
     let json = serde_json::to_vec(&claim).unwrap();
+    // skip_serializing_if: None recipient_id must be omitted from the JSON
+    let raw = std::str::from_utf8(&json).unwrap();
+    assert!(!raw.contains("recipient_id"));
     let back: WatermarkClaim = serde_json::from_slice(&json).unwrap();
     assert_eq!(back.mode, "dwt");
     assert_eq!(back.recipient_id, None);
