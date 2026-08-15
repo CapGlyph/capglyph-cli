@@ -769,7 +769,7 @@ fn secret_layer_key_roundtrip() {
     let input = tmp.path().join("noise_input.png");
     let img = image::RgbImage::from_fn(256, 256, |x, y| {
         let v = ((x * 31 + y * 17 + x * y) % 251) as u8;
-        image::Rgb([v, (v + 60) % 255, (v + 120) % 255])
+        image::Rgb([v, (v as u32 + 60) as u8 % 255, (v as u32 + 120) as u8 % 255])
     });
     img.save(&input).unwrap();
     let output = tmp.path().join("keyed.png");
@@ -830,7 +830,7 @@ fn secret_layer_dct_roundtrip() {
     let input = tmp.path().join("big_noise_input.png");
     let img = image::RgbImage::from_fn(512, 512, |x, y| {
         let v = ((x * 31 + y * 17 + x * y) % 251) as u8;
-        image::Rgb([v, (v + 60) % 255, (v + 120) % 255])
+        image::Rgb([v, (v as u32 + 60) as u8 % 255, (v as u32 + 120) as u8 % 255])
     });
     img.save(&input).unwrap();
     let output = tmp.path().join("keyed_dct.png");
