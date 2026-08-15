@@ -69,7 +69,7 @@ jobs:
         # runs in the job context where git works.
         run: |
           curl -sL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar xz actionlint
-          ./actionlint -color .github/workflows/
+          ./actionlint -color .github/workflows/*.yml
 
   test-learned-systems:
     name: Test learned on macOS & Windows
