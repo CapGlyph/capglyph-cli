@@ -1,7 +1,7 @@
 //! C2PA integration tests — require the `c2pa` cargo feature.
 #![cfg(feature = "c2pa")]
 
-use sigil::c2pa::{init_cert, WatermarkClaim};
+use sigil::c2pa::{init_cert, sign_image, WatermarkClaim};
 
 #[test]
 fn watermark_claim_serde_roundtrip() {
@@ -73,4 +73,127 @@ fn init_cert_refuses_overwrite_without_force() {
     init_cert(None, dir.path(), false).unwrap();
     assert!(init_cert(None, dir.path(), false).is_err());
     assert!(init_cert(None, dir.path(), true).is_ok());
+}
+
+fn make_fixture_rgb(w: u32, h: u32) -> image::RgbImage {
+    image::RgbImage::from_fn(w, h, |x, y| {
+        image::Rgb([
+            (x * 7 % 256) as u8,
+            (y * 11 % 256) as u8,
+            ((x + y) * 3 % 256) as u8,
+        ])
+    })
+}
+
+fn sign_roundtrip(ext: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let (cert, key) = init_cert(Some("Sigil Test"), dir.path(), false).unwrap();
+
+    let input = dir.path().join(format!("input.{ext}"));
+    let output = dir.path().join(format!("signed.{ext}"));
+    let img = make_fixture_rgb(64, 64);
+    img.save(&input).unwrap();
+
+    let claim = WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: Some("alice01".to_string()),
+        keyed: false,
+    };
+    sign_image(&input, &output, &cert, &key, &claim, None).unwrap();
+    (dir, output)
+}
+
+#[test]
+fn sign_image_png_produces_valid_manifest() {
+    let (_dir, output) = sign_roundtrip("png");
+    let reader = c2pa::Reader::from_context(c2pa::Context::new())
+        .with_file(&output)
+        .unwrap();
+    let manifest = reader.active_manifest().expect("manifest present");
+    assert_eq!(reader.validation_state(), c2pa::ValidationState::Valid);
+
+    let results = reader.validation_results().expect("validation results");
+    let statuses = results.active_manifest().expect("active manifest statuses");
+    let success: Vec<&str> = statuses.success.iter().map(|s| s.code()).collect();
+    assert!(
+        success.contains(&"claimSignature.validated"),
+        "success codes: {success:?}"
+    );
+    let failures: Vec<&str> = statuses.failure.iter().map(|s| s.code()).collect();
+    assert!(
+        !failures.contains(&"claimSignature.mismatch"),
+        "failure codes: {failures:?}"
+    );
+
+    let claim: WatermarkClaim = manifest.find_assertion("com.sigil.watermark").unwrap();
+    assert_eq!(claim.mode, "dct");
+    assert_eq!(claim.recipient_id.as_deref(), Some("alice01"));
+}
+
+#[test]
+fn sign_image_jpeg_produces_valid_manifest() {
+    let (_dir, output) = sign_roundtrip("jpg");
+    let reader = c2pa::Reader::from_context(c2pa::Context::new())
+        .with_file(&output)
+        .unwrap();
+    assert!(reader.active_manifest().is_some());
+    assert_eq!(reader.validation_state(), c2pa::ValidationState::Valid);
+
+    let results = reader.validation_results().expect("validation results");
+    let statuses = results.active_manifest().expect("active manifest statuses");
+    let success: Vec<&str> = statuses.success.iter().map(|s| s.code()).collect();
+    assert!(
+        success.contains(&"claimSignature.validated"),
+        "success codes: {success:?}"
+    );
+}
+
+#[test]
+fn sign_image_rejects_in_place_signing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cert, key) = init_cert(None, dir.path(), false).unwrap();
+    let input = dir.path().join("input.png");
+    make_fixture_rgb(32, 32).save(&input).unwrap();
+    let claim = WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: None,
+        keyed: false,
+    };
+    let err = sign_image(&input, &input, &cert, &key, &claim, None).unwrap_err();
+    assert!(err.to_string().contains("same path"));
+}
+
+#[test]
+fn sign_image_wrong_key_fails_validation() {
+    // cert from pair A, key from pair B -> validation must fail
+    let dir = tempfile::tempdir().unwrap();
+    let (cert_a, _key_a) = init_cert(None, &dir.path().join("a"), false).unwrap();
+    let (_cert_b, key_b) = init_cert(None, &dir.path().join("b"), false).unwrap();
+
+    let input = dir.path().join("input.png");
+    let output = dir.path().join("signed.png");
+    make_fixture_rgb(32, 32).save(&input).unwrap();
+    let claim = WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: None,
+        keyed: false,
+    };
+    sign_image(&input, &output, &cert_a, &key_b, &claim, None).unwrap();
+
+    let reader = c2pa::Reader::from_context(c2pa::Context::new())
+        .with_file(&output)
+        .unwrap();
+    assert_ne!(reader.validation_state(), c2pa::ValidationState::Valid);
+    let results = reader.validation_results().expect("validation results");
+    let statuses = results.active_manifest().expect("active manifest statuses");
+    let success: Vec<&str> = statuses.success.iter().map(|s| s.code()).collect();
+    let failures: Vec<&str> = statuses.failure.iter().map(|s| s.code()).collect();
+    assert!(
+        !success.contains(&"claimSignature.validated"),
+        "mismatched key must not validate, success codes: {success:?}"
+    );
+    assert!(
+        failures.contains(&"claimSignature.mismatch"),
+        "mismatched key must fail signature verification, failure codes: {failures:?}"
+    );
 }
