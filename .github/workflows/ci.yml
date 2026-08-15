@@ -68,7 +68,7 @@ jobs:
         # so actionlint reports "no project was found". The plain binary
         # runs in the job context where git works.
         run: |
-          curl -sL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_x86_64.tar.gz | tar xz actionlint
+          curl -sL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar xz actionlint
           ./actionlint -color .github/workflows/
 
   test-learned-systems:
