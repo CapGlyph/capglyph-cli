@@ -190,9 +190,17 @@ jobs:
           arch=('x86_64' 'aarch64')
           url="https://github.com/Xuepoo/sigil"
           license=('Apache-2.0')
-          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/archive/refs/tags/v\$pkgver.tar.gz")
-          sha256sums=('SKIP')
+          _vmver=8.0.0
+          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/archive/refs/tags/v\$pkgver.tar.gz"
+                  "vectomancy-\$_vmver::https://github.com/Xuepoo/vectomancy/archive/refs/tags/v\$_vmver.tar.gz")
+          sha256sums=('SKIP'
+                      'SKIP')
           makedepends=('cargo')
+
+          prepare() {
+            # sigil's Cargo.toml depends on ../vectomancy path deps
+            ln -sfn "\$srcdir/vectomancy-\$_vmver" "\$srcdir/sigil-\$pkgver/../vectomancy"
+          }
 
           build() {
             cd "sigil-\$pkgver"
