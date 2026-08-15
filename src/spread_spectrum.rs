@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 
 /// Redundancy factor: how many coefficients encode each bit
-pub const REDUNDANCY: usize = 5;
+pub const REDUNDANCY: usize = 8;
 
 /// Encode a recipient ID string into binary bits
 pub fn encode_bits(recipient_id: &str) -> Vec<u8> {

@@ -78,9 +78,10 @@ pub fn embed(
     let (w, h) = img.dimensions();
 
     let positions = collect_embed_positions(geometry, w, h);
-    if positions.is_empty() {
-        return Ok((0, vec![]));
-    }
+    // NOTE: do NOT early-return on empty positions — solid-color images have no
+    // geometry, but the self-sync + ID layers (geometry-free PRNG positions)
+    // still embed and extract correctly. Only layer 1 (primary watermark)
+    // is skipped.
 
     // Compute ID bits if recipient_id provided
     let id_bits: Vec<bool> = if let Some(rid) = recipient_id {
