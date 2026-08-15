@@ -171,9 +171,9 @@ jobs:
           git config --global user.name "Xuepoo (CI)"
           git config --global user.email "xuepoofoter@gmail.com"
 
-      - name: Update AUR source package (sigil)
+      - name: Update AUR source package (sigil-wm)
         run: |
-          git clone ssh://aur@aur.archlinux.org/sigil.git aur-src
+          git clone ssh://aur@aur.archlinux.org/sigil-wm.git aur-src
           cd aur-src
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
@@ -183,7 +183,7 @@ jobs:
           if [ ! -f PKGBUILD ]; then
             cat << PKGEOF > PKGBUILD
           # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
-          pkgname=sigil
+          pkgname=sigil-wm
           pkgver=${CLEAN_VERSION}
           pkgrel=1
           pkgdesc="Invisible structural watermark for images"
@@ -216,9 +216,9 @@ jobs:
           git commit -m "Update to v${CLEAN_VERSION}" || true
           git push origin master
 
-      - name: Update AUR binary package (sigil-bin)
+      - name: Update AUR binary package (sigil-wm-bin)
         run: |
-          git clone ssh://aur@aur.archlinux.org/sigil-bin.git aur-bin
+          git clone ssh://aur@aur.archlinux.org/sigil-wm-bin.git aur-bin
           cd aur-bin
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
@@ -226,7 +226,7 @@ jobs:
           if [ ! -f PKGBUILD ]; then
             cat << PKGEOF > PKGBUILD
           # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
-          pkgname=sigil-bin
+          pkgname=sigil-wm-bin
           pkgver=${CLEAN_VERSION}
           pkgrel=1
           pkgdesc="Invisible structural watermark for images (binary release)"
