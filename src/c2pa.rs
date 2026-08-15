@@ -133,6 +133,119 @@ pub fn sign_image(
     Ok(())
 }
 
+/// Result of reading + verifying a C2PA manifest.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct C2paReport {
+    pub present: bool,
+    pub claim_generator: Option<String>,
+    pub signature_status: String, // "valid" | "invalid" | "unsigned"
+    pub signer_org: Option<String>,
+    pub valid_from: Option<String>, // RFC 3339
+    pub valid_to: Option<String>,   // RFC 3339
+    pub watermark_claim: Option<WatermarkClaim>,
+}
+
+impl C2paReport {
+    fn unsigned() -> Self {
+        Self {
+            present: false,
+            claim_generator: None,
+            signature_status: "unsigned".to_string(),
+            signer_org: None,
+            valid_from: None,
+            valid_to: None,
+            watermark_claim: None,
+        }
+    }
+}
+
+/// Read + verify the C2PA manifest of `input` (JPEG/PNG).
+pub fn verify_image(input: &Path) -> Result<C2paReport> {
+    let reader = match c2pa::Reader::from_context(c2pa::Context::new()).with_file(input) {
+        Ok(reader) => reader,
+        // A valid image without any C2PA boxes is "unsigned", not an error.
+        Err(c2pa::Error::JumbfNotFound) => return Ok(C2paReport::unsigned()),
+        Err(e) => {
+            return Err(anyhow!(e))
+                .with_context(|| format!("Failed to open as C2PA asset: {input:?}"));
+        }
+    };
+
+    let Some(manifest) = reader.active_manifest() else {
+        return Ok(C2paReport::unsigned());
+    };
+
+    let codes: Vec<String> = reader
+        .validation_status()
+        .map(|s| s.iter().map(|v| v.code().to_string()).collect())
+        .unwrap_or_default();
+    let signature_status = if codes
+        .iter()
+        .any(|c| c == "claimSignature.mismatch" || c == "claimSignature.missing")
+    {
+        "invalid"
+    } else if reader
+        .validation_results()
+        .and_then(|r| r.active_manifest())
+        .map(|s| {
+            s.success
+                .iter()
+                .any(|v| v.code() == "claimSignature.validated")
+        })
+        .unwrap_or(false)
+    {
+        "valid"
+    } else {
+        "invalid"
+    };
+
+    let claim_generator = manifest.claim_generator().map(|s| s.to_string());
+    let cert_chain = manifest
+        .signature_info()
+        .map(|si| si.cert_chain().to_string())
+        .unwrap_or_default();
+    let (signer_org, valid_from, valid_to) = parse_signer_cert(&cert_chain);
+
+    let watermark_claim = manifest
+        .find_assertion::<WatermarkClaim>("com.sigil.watermark")
+        .ok();
+
+    Ok(C2paReport {
+        present: true,
+        claim_generator,
+        signature_status: signature_status.to_string(),
+        signer_org,
+        valid_from,
+        valid_to,
+        watermark_claim,
+    })
+}
+
+/// Extract `(CN, not_before, not_after)` from the first cert of a PEM chain.
+fn parse_signer_cert(chain_pem: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let (_, pem) = match x509_parser::pem::parse_x509_pem(chain_pem.as_bytes()) {
+        Ok(parsed) => parsed,
+        Err(_) => return (None, None, None),
+    };
+    let cert = match pem.parse_x509() {
+        Ok(c) => c,
+        Err(_) => return (None, None, None),
+    };
+    let org = cert
+        .subject()
+        .iter_common_name()
+        .next()
+        .and_then(|cn| cn.as_str().ok())
+        .map(|s| s.to_string());
+    let fmt_ts = |dt: time::OffsetDateTime| {
+        dt.format(&time::format_description::well_known::Rfc3339)
+            .ok()
+    };
+    let from = fmt_ts(cert.validity().not_before.to_datetime());
+    let to = fmt_ts(cert.validity().not_after.to_datetime());
+    (org, from, to)
+}
+
 /// Resolve a `digitalSourceType` argument into the typed C2PA enum.
 ///
 /// Short tokens map to the IPTC digital source types; anything containing

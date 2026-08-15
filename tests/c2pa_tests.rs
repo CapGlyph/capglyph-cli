@@ -1,7 +1,7 @@
 //! C2PA integration tests — require the `c2pa` cargo feature.
 #![cfg(feature = "c2pa")]
 
-use sigil::c2pa::{init_cert, sign_image, WatermarkClaim};
+use sigil::c2pa::{init_cert, sign_image, verify_image, WatermarkClaim};
 
 #[test]
 fn watermark_claim_serde_roundtrip() {
@@ -258,4 +258,29 @@ fn sign_image_rejects_unknown_source_type() {
     };
     let err = sign_image(&input, &output, &cert, &key, &claim, None, Some("bogus")).unwrap_err();
     assert!(err.to_string().contains("unknown digital source type"));
+}
+
+#[test]
+fn verify_image_unsigned() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("plain.png");
+    make_fixture_rgb(32, 32).save(&input).unwrap();
+    let report = verify_image(&input).unwrap();
+    assert!(!report.present);
+    assert_eq!(report.signature_status, "unsigned");
+    assert!(report.signer_org.is_none());
+    assert!(report.watermark_claim.is_none());
+}
+
+#[test]
+fn verify_image_signed_reports_org_and_claim() {
+    let (_dir, output) = sign_roundtrip("png", None);
+    let report = verify_image(&output).unwrap();
+    assert!(report.present);
+    assert_eq!(report.signature_status, "valid");
+    assert_eq!(report.signer_org.as_deref(), Some("Sigil Test"));
+    assert!(report.valid_from.is_some());
+    assert!(report.valid_to.is_some());
+    let claim = report.watermark_claim.expect("claim present");
+    assert_eq!(claim.mode, "dct");
 }
