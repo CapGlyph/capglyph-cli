@@ -2,22 +2,24 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
     name: Test & Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Sigil depends on the vectomancy crates via path deps (../vectomancy).
       # Check out the vectomancy repo next to the sigil workspace.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Xuepoo/vectomancy
           path: ../vectomancy
@@ -26,11 +28,18 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      # actions/cache@v6 runs on the Node24 runtime (v4 still declared
+      # `using: node20`, which the runner force-runs on Node24 with a
+      # deprecation warning ahead of the 2026 default switch).
+      - uses: actions/cache@v6
         with:
-          workspaces: |
-            .
-            ../vectomancy
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ../vectomancy/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', '../vectomancy/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
 
       - name: Format check
         run: cargo fmt --check
@@ -47,23 +56,32 @@ jobs:
       - name: Test (learned feature)
         run: cargo test --features learned
 
+      - name: Lint GitHub Actions (actionlint)
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
   test-learned-systems:
     name: Test learned on macOS & Windows
     strategy:
       matrix:
-        os: [macos-14, windows-2022]
+        os: [macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: Xuepoo/vectomancy
           path: ../vectomancy
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v6
         with:
-          workspaces: |
-            .
-            ../vectomancy
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ../vectomancy/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', '../vectomancy/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
       - name: Test (learned feature)
         run: cargo test --features learned

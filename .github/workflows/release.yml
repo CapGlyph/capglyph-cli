@@ -2,90 +2,107 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
+  workflow_dispatch:
 
-permissions:
-  contents: write
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
+  build-and-release:
+    name: Build Binary for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: sigil-linux-x86_64
-          - os: ubuntu-24.04
+            artifact_name: sigil-linux-x86_64
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: sigil-linux-aarch64
-          - os: macos-14
+            artifact_name: sigil-linux-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: sigil-windows-x86_64.exe
+          - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: sigil-macos-x86_64
+            artifact_name: sigil-macos-x86_64
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact: sigil-macos-aarch64
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            artifact: sigil-windows-x86_64
+            artifact_name: sigil-macos-aarch64
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      # Sigil depends on the vectomancy crates via path deps (../vectomancy).
+      - name: Checkout vectomancy (path dependency)
+        uses: actions/checkout@v7.0.1
         with:
           repository: Xuepoo/vectomancy
           path: ../vectomancy
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compile deps (aarch64-linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v6
         with:
-          workspaces: |
-            .
-            ../vectomancy
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ../vectomancy/target
+          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '../vectomancy/Cargo.lock') }}
+          restore-keys: release-${{ runner.os }}-${{ matrix.target }}-
 
-      - name: Build (release, learned feature)
+      - name: Build release (learned feature)
         run: cargo build --release --features learned --target ${{ matrix.target }}
 
-      - name: Package binary
-        shell: bash
-        run: |
-          cd "target/${{ matrix.target }}/release"
-          case "${{ matrix.target }}" in
-            *windows*)
-              zip "${{ matrix.artifact }}.zip" sigil.exe
-              ;;
-            *)
-              tar -czf "${{ matrix.artifact }}.tar.gz" sigil
-              ;;
-          esac
+      - name: Rename artifact (Linux/macOS)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        run: mv "target/${{ matrix.target }}/release/sigil" "${{ matrix.artifact_name }}"
+
+      - name: Rename artifact (Windows)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: move "target/${{ matrix.target }}/release/sigil.exe" "${{ matrix.artifact_name }}"
+
+      - name: Package tarball (Linux/macOS)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        run: tar -czf "${{ matrix.artifact_name }}.tar.gz" "${{ matrix.artifact_name }}"
+
+      - name: Package zip (Windows)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: powershell Compress-Archive -Path "${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.artifact_name }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact_name }}
           path: |
-            target/${{ matrix.target }}/release/*.tar.gz
-            target/${{ matrix.target }}/release/*.zip
+            ${{ matrix.artifact_name }}.tar.gz
+            ${{ matrix.artifact_name }}.zip
 
-  release:
-    name: Publish GitHub Release
-    needs: build
+  release-github:
+    name: Create GitHub Release
+    needs: build-and-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8.0.1
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
-          files: artifacts/*
+          files: artifacts/**/*
           generate_release_notes: true
