@@ -64,7 +64,7 @@ fn init_cert_generates_valid_pair() {
         let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
     }
-    let _ = key_pem.contains("BEGIN PRIVATE KEY");
+    assert!(key_pem.contains("BEGIN PRIVATE KEY"));
 }
 
 #[test]
