@@ -8,6 +8,7 @@ pub mod embed;
 pub mod extract;
 pub mod geometry;
 pub mod info;
+pub mod keying;
 pub mod signal;
 pub mod spread_spectrum;
 pub mod strip;

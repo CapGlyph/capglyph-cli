@@ -69,12 +69,16 @@ pub const VERIFY_THRESHOLD: f32 = 8.0;
 ///
 /// `recipient_id`: Optional string mixed into PRNG seed for per-recipient tracking.
 ///
+/// `secret_key`: Optional HMAC key for the secret layer — an extra set of
+/// key-derived blocks carrying +EMBED_DELTA. Verifiable only with the key.
+///
 /// The returned `Vec<(u32, u32)>` contains the exact sorted block coordinates used during embed,
 /// which must be stored in the geometry file for accurate recipient ID extraction.
 pub fn embed(
     img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
+    secret_key: Option<&str>,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
     let (iw, ih) = img.dimensions();
 
@@ -206,7 +210,79 @@ pub fn embed(
         }
     }
 
+    // 4. Secret layer: key-derived blocks carrying a differential-pair signal
+    //    at (2,3): block 2i gets +EMBED_DELTA, block 2i+1 gets -EMBED_DELTA.
+    //    Mean of (coeff[2i] - coeff[2i+1]) ≈ 2·EMBED_DELTA under the correct
+    //    key and ≈ 0 under a wrong key — even when positions overlap the
+    //    primary watermark (uniform +EMBED_DELTA on skeleton blocks).
+    if let Some(key) = secret_key {
+        let seed = stable_seed(img);
+        let kseed = crate::keying::key_seed(key, seed);
+        let total_blocks = (iw / 8) * (ih / 8);
+        let pairs = (SECRET_BLOCK_COUNT / 2).min((total_blocks / 2) as usize);
+        let secret_blocks = prng_block_list(kseed, iw, ih, pairs * 2);
+        for (i, &(bx, by)) in secret_blocks.iter().enumerate() {
+            let delta = if i % 2 == 0 {
+                EMBED_DELTA
+            } else {
+                -EMBED_DELTA
+            };
+            let ox = bx * 8;
+            let oy = by * 8;
+            for ch in 0..3usize {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[TARGET_U][TARGET_V] += delta;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
+            }
+        }
+    }
+
     Ok((n_blocks, blocks))
+}
+
+/// Number of blocks carrying the secret layer (used in pairs of ±).
+pub const SECRET_BLOCK_COUNT: usize = 512;
+
+/// Verify the secret layer: differential-pair mean of F[2,3] at key-derived
+/// blocks. Correct key → ≈ 2·EMBED_DELTA; wrong key → ≈ 0.
+pub fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
+    let (iw, ih) = img.dimensions();
+    let seed = stable_seed(img);
+    let kseed = crate::keying::key_seed(key, seed);
+    let total_blocks = (iw / 8) * (ih / 8);
+    let pairs = (SECRET_BLOCK_COUNT / 2).min((total_blocks / 2) as usize);
+    let secret_blocks = prng_block_list(kseed, iw, ih, pairs * 2);
+    let mut sum = 0.0f64;
+    let mut n = 0u64;
+    for ch in 0..3usize {
+        let mut pair_sum = 0.0f64;
+        let mut pair_count = 0u64;
+        for (i, &(bx, by)) in secret_blocks.iter().enumerate() {
+            let ox = bx * 8;
+            let oy = by * 8;
+            if ox + 8 <= iw && oy + 8 <= ih {
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                if i % 2 == 0 {
+                    pair_sum += block[TARGET_U][TARGET_V] as f64;
+                } else {
+                    pair_sum -= block[TARGET_U][TARGET_V] as f64;
+                    pair_count += 1;
+                }
+            }
+        }
+        if pair_count > 0 {
+            sum += pair_sum / pair_count as f64;
+            n += 1;
+        }
+    }
+    if n == 0 {
+        0.0
+    } else {
+        sum / n as f64
+    }
 }
 
 /// Metrics from DCT-domain verification.
@@ -761,7 +837,7 @@ mod stable_seed_tests {
             blocks: None,
         };
 
-        embed(&mut img, &geo, Some("test")).unwrap();
+        embed(&mut img, &geo, Some("test"), None).unwrap();
 
         // Recover the seed from self-sync blocks (magic-constant located)
         let sync_blocks = prng_block_list(SEED_MAGIC, w, h, 64 * 8);

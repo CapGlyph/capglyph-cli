@@ -98,6 +98,13 @@ pub struct EmbedArgs {
     #[arg(long, default_value_t = false)]
     pub color: bool,
 
+    /// Secret key for the key-derived secret layer (dct/dwt modes).
+    /// The layer adds +EMBED_DELTA at HMAC(key, image)-derived positions.
+    /// Verification of this layer requires the same key — it provides
+    /// forgery resistance and blocks cross-image parameter learning.
+    #[arg(long)]
+    pub key: Option<String>,
+
     /// Save extracted geometry to this JSON file for later re-use
     #[arg(long)]
     pub save_geometry: Option<PathBuf>,
@@ -139,6 +146,12 @@ pub struct VerifyArgs {
     /// image has near-zero mean signal at those positions.
     #[arg(long, default_value_t = 4.0)]
     pub mean_threshold: f64,
+
+    /// Secret key for verifying the key-derived secret layer.
+    /// With a key, verify additionally checks the HMAC(key, image)-derived
+    /// positions and reports the secret layer mean signal.
+    #[arg(long)]
+    pub key: Option<String>,
 
     /// Print full signal statistics
     #[arg(long)]

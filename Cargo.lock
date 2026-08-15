@@ -2279,10 +2279,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "digest",
  "glob",
+ "hmac",
  "image",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tiny-skia",
  "tracing",

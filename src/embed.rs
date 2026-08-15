@@ -96,8 +96,12 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             };
 
             let mut rgb = src_img.to_rgb8();
-            let (n_blocks, blocks) =
-                crate::dct::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
+            let (n_blocks, blocks) = crate::dct::embed(
+                &mut rgb,
+                &geometry,
+                args.recipient_id.as_deref(),
+                args.key.as_deref(),
+            )?;
 
             // If recipient_id is provided, update geometry with blocks for extraction
             let mut geometry_with_blocks = geometry.clone();
@@ -159,8 +163,12 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             };
 
             let mut rgb = src_img.to_rgb8();
-            let (n_coeffs, dwt_positions) =
-                crate::dwt_embed::embed(&mut rgb, &geometry, args.recipient_id.as_deref())?;
+            let (n_coeffs, dwt_positions) = crate::dwt_embed::embed(
+                &mut rgb,
+                &geometry,
+                args.recipient_id.as_deref(),
+                args.key.as_deref(),
+            )?;
 
             // Store positions in geometry when recipient_id is provided
             let mut geometry_with_blocks = geometry.clone();
@@ -243,6 +251,7 @@ pub fn extract_and_build_geometry(
         save_geometry: None,
         from_geometry: None,
         recipient_id: params.recipient_id.clone(),
+        key: None,
     };
 
     extract_geometry(&dyn_img, width, height, &args)

@@ -10,6 +10,9 @@ use std::collections::HashSet;
 pub const EXIT_PRESENT: i32 = 0;
 pub const EXIT_ABSENT: i32 = 1;
 
+/// Secret-layer mean-signal threshold: half of EMBED_DELTA / DWT_EMBED_STRENGTH.
+pub const SECRET_MEAN_THRESHOLD: f64 = 4.0;
+
 /// Entry point for the `verify` subcommand.
 ///
 /// Returns `Ok(true)` if watermark is present, `Ok(false)` if absent.
@@ -20,11 +23,39 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
     let img = image::open(&args.input)
         .with_context(|| format!("Failed to open image: {:?}", args.input))?;
 
-    match args.mode {
-        EmbedMode::Alpha => verify_alpha(&img, args),
-        EmbedMode::Dct => verify_dct(&img, args),
-        EmbedMode::Dwt => verify_dwt(&img, args),
+    let present = match args.mode {
+        EmbedMode::Alpha => verify_alpha(&img, args)?,
+        EmbedMode::Dct => verify_dct(&img, args)?,
+        EmbedMode::Dwt => verify_dwt(&img, args)?,
+    };
+
+    // Secret layer check (dct/dwt only): with a key, additionally verify the
+    // HMAC-derived layer. Its presence/absence is reported independently.
+    if let Some(key) = &args.key {
+        match args.mode {
+            EmbedMode::Dct | EmbedMode::Dwt => {
+                let rgb = img.to_rgb8();
+                let secret_mean = match args.mode {
+                    EmbedMode::Dct => crate::dct::verify_secret(&rgb, key),
+                    EmbedMode::Dwt => crate::dwt_embed::verify_secret(&rgb, key),
+                    EmbedMode::Alpha => unreachable!(),
+                };
+                let secret_present = secret_mean >= SECRET_MEAN_THRESHOLD;
+                if secret_present {
+                    println!("SECRET LAYER PRESENT");
+                } else {
+                    println!("SECRET LAYER ABSENT");
+                }
+                if args.verbose {
+                    println!("  secret mean signal: {secret_mean:.2}");
+                    println!("  secret threshold:   {SECRET_MEAN_THRESHOLD:.1}");
+                }
+            }
+            EmbedMode::Alpha => {}
+        }
     }
+
+    Ok(present)
 }
 
 /// Alpha-channel verification: check semi-transparent pixel fraction.

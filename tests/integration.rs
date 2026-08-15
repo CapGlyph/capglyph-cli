@@ -59,6 +59,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         save_geometry: None,
         from_geometry: None,
         recipient_id: None,
+        key: None,
     }
 }
 
@@ -96,6 +97,7 @@ fn verify_present_after_embed() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     })
     .unwrap();
@@ -114,6 +116,7 @@ fn verify_absent_for_plain_rgb() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     })
     .unwrap();
@@ -149,6 +152,7 @@ fn verify_absent_after_strip() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     })
     .unwrap();
@@ -187,6 +191,7 @@ fn from_geometry_matches_full_run() {
         stroke: 0.010,
         save_geometry: None,
         recipient_id: None,
+        key: None,
     })
     .unwrap();
 
@@ -317,6 +322,7 @@ fn dct_watermark_survives_jpeg_q75() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -357,6 +363,7 @@ fn dct_watermark_degrades_at_jpeg_q50() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     });
     // No assertion: q50 behavior on tiny images is documented, not required.
@@ -391,6 +398,7 @@ fn alpha_watermark_destroyed_by_jpeg() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -414,6 +422,7 @@ fn dct_preserves_alpha_channel() {
         chaikin_iters: 1,
         from_geometry: None,
         recipient_id: None,
+        key: None,
         color: false,
         save_geometry: None,
     };
@@ -449,6 +458,7 @@ fn dct_preserves_alpha_channel() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let result = verify::run(&verify_args).unwrap();
@@ -517,6 +527,7 @@ fn dwt_watermark_embed_and_verify() {
         save_geometry: None,
         from_geometry: None,
         recipient_id: None,
+        key: None,
     };
     embed::run(&args).unwrap();
 
@@ -526,6 +537,7 @@ fn dwt_watermark_embed_and_verify() {
         geometry: None,
         threshold: 0.5,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -570,6 +582,7 @@ fn dwt_watermark_survives_jpeg_q75() {
         save_geometry: None,
         from_geometry: None,
         recipient_id: None,
+        key: None,
     };
     embed::run(&args).unwrap();
 
@@ -588,6 +601,7 @@ fn dwt_watermark_survives_jpeg_q75() {
         geometry: None,
         threshold: 0.2,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -632,6 +646,7 @@ fn dwt_watermark_survives_scale() {
         save_geometry: None,
         from_geometry: None,
         recipient_id: None,
+        key: None,
     };
     embed::run(&args).unwrap();
 
@@ -651,6 +666,7 @@ fn dwt_watermark_survives_scale() {
         geometry: None,
         threshold: 0.3,
         mean_threshold: 4.0,
+        key: None,
         verbose: false,
     };
     let present = verify::run(&verify_args).unwrap();
@@ -693,6 +709,7 @@ fn recipient_id_roundtrip() {
         save_geometry: Some(geo_path.clone()),
         from_geometry: None,
         recipient_id: Some("test_user_123".to_string()),
+        key: None,
     };
     embed::run(&embed_args).unwrap();
 
@@ -705,4 +722,104 @@ fn recipient_id_roundtrip() {
     };
     let extracted = extract::run(&extract_args).unwrap();
     assert_eq!(extracted, "test_user_123");
+}
+
+#[test]
+fn secret_layer_key_roundtrip() {
+    use sigil::cli::{EmbedArgs, EmbedMode, VerifyArgs};
+    use sigil::{embed, verify};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let input = tmp.path().join("noise_input.png");
+    let img = image::RgbImage::from_fn(256, 256, |x, y| {
+        let v = ((x * 31 + y * 17 + x * y) % 251) as u8;
+        image::Rgb([v, (v + 60) % 255, (v + 120) % 255])
+    });
+    img.save(&input).unwrap();
+    let output = tmp.path().join("keyed.png");
+
+    let args = EmbedArgs {
+        input: input.clone(),
+        output: Some(output.clone()),
+        mode: EmbedMode::Dwt,
+        stroke: 0.010,
+        detail: 60,
+        min_path_len: 5,
+        chaikin_iters: 3,
+        color: false,
+        save_geometry: None,
+        from_geometry: None,
+        recipient_id: None,
+        key: Some("k_test_123".to_string()),
+    };
+    embed::run(&args).unwrap();
+
+    // Correct key → secret layer present
+    let verify_args = VerifyArgs {
+        input: output.clone(),
+        mode: EmbedMode::Dwt,
+        geometry: None,
+        threshold: 0.0001,
+        mean_threshold: 4.0,
+        key: Some("k_test_123".to_string()),
+        verbose: false,
+    };
+    let present = verify::run(&verify_args).unwrap();
+    assert!(present, "public layer should be present");
+
+    // Wrong key → secret layer absent (verify against the raw mean)
+    let rgb = image::open(&output).unwrap().to_rgb8();
+    let correct_mean = sigil::dwt_embed::verify_secret(&rgb, "k_test_123");
+    let wrong_mean = sigil::dwt_embed::verify_secret(&rgb, "not_the_key");
+    assert!(
+        correct_mean >= 4.0,
+        "correct key should detect secret layer, got {correct_mean}"
+    );
+    assert!(
+        wrong_mean < 4.0,
+        "wrong key should not detect secret layer, got {wrong_mean}"
+    );
+}
+
+#[test]
+fn secret_layer_dct_roundtrip() {
+    use sigil::cli::{EmbedArgs, EmbedMode};
+    use sigil::embed;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let input = tmp.path().join("big_noise_input.png");
+    let img = image::RgbImage::from_fn(512, 512, |x, y| {
+        let v = ((x * 31 + y * 17 + x * y) % 251) as u8;
+        image::Rgb([v, (v + 60) % 255, (v + 120) % 255])
+    });
+    img.save(&input).unwrap();
+    let output = tmp.path().join("keyed_dct.png");
+
+    let args = EmbedArgs {
+        input: input.clone(),
+        output: Some(output.clone()),
+        mode: EmbedMode::Dct,
+        stroke: 0.010,
+        detail: 60,
+        min_path_len: 5,
+        chaikin_iters: 3,
+        color: false,
+        save_geometry: None,
+        from_geometry: None,
+        recipient_id: None,
+        key: Some("dct_key_42".to_string()),
+    };
+    embed::run(&args).unwrap();
+
+    let rgb = image::open(&output).unwrap().to_rgb8();
+    let correct_mean = sigil::dct::verify_secret(&rgb, "dct_key_42");
+    let wrong_mean = sigil::dct::verify_secret(&rgb, "other_key");
+    assert!(
+        correct_mean >= 4.0,
+        "correct key should detect DCT secret layer, got {correct_mean}"
+    );
+    assert!(
+        wrong_mean < 4.0,
+        "wrong key should not detect DCT secret layer, got {wrong_mean}"
+    );
 }

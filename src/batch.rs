@@ -61,6 +61,7 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             save_geometry: None,
             from_geometry: None,
             recipient_id: args.recipient_id.clone(),
+            key: None,
         };
 
         match embed::embed(&embed_args) {

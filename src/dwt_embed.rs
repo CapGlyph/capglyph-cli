@@ -68,12 +68,15 @@ pub struct DwtSignalMetrics {
 ///   1. Primary watermark: +DWT_EMBED_STRENGTH at geometry positions (verify)
 ///   2. Self-sync seed: ±DWT_ID_EMBED_STRENGTH at SEED_MAGIC positions (64 bits)
 ///   3. Recipient ID: ±DWT_ID_EMBED_STRENGTH at stable_seed PRNG positions
+///   4. Secret layer (when secret_key given): +DWT_EMBED_STRENGTH at
+///      HMAC(key, seed)-derived band positions — verifiable only with key
 ///
 /// Layers 2+3 are geometry-free — extraction locates them via PRNG only.
 pub fn embed(
     img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
+    secret_key: Option<&str>,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
     let (w, h) = img.dimensions();
 
@@ -112,6 +115,14 @@ pub fn embed(
             .into_iter()
             .filter(|p| !sync_set.contains(p))
             .collect()
+    } else {
+        vec![]
+    };
+
+    // Secret-layer positions derived from HMAC(key, seed)
+    let secret_positions: Vec<(u32, u32)> = if let Some(key) = secret_key {
+        let kseed = crate::keying::key_seed(key, seed);
+        prng_band_positions(kseed, band_w, band_h, SECRET_BAND_COUNT)
     } else {
         vec![]
     };
@@ -193,12 +204,73 @@ pub fn embed(
             }
         }
 
+        // Layer 4: secret layer — differential pairs (±DWT_EMBED_STRENGTH) at
+        // key-derived positions. Wrong key → pair mean ≈ 0 even when positions
+        // overlap the primary watermark.
+        for (i, &(bx, by)) in secret_positions.iter().enumerate() {
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                let delta = if i % 2 == 0 {
+                    DWT_EMBED_STRENGTH
+                } else {
+                    -DWT_EMBED_STRENGTH
+                };
+                band[by][bx] += delta;
+                total_modified += 1;
+            }
+        }
+
         // Inverse DWT
         let reconstructed = haar_2d_inverse(&decomp)?;
         write_channel(img, ch, &reconstructed);
     }
 
     Ok((total_modified / 3, positions))
+}
+
+/// Number of LH band positions carrying the DWT secret layer (used in ± pairs).
+pub const SECRET_BAND_COUNT: usize = 512;
+
+/// Verify the DWT secret layer: differential-pair mean of LH coefficients at
+/// key-derived band positions. Correct key → ≈ 2·DWT_EMBED_STRENGTH;
+/// wrong key → ≈ 0.
+pub fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
+    let (w, h) = img.dimensions();
+    let seed = crate::dct::stable_seed(img);
+    let kseed = crate::keying::key_seed(key, seed);
+    let positions = prng_band_positions(kseed, w / 2, h / 2, SECRET_BAND_COUNT);
+    let mut sum = 0.0f64;
+    let mut n = 0u64;
+    for ch in 0..3usize {
+        let channel_matrix = extract_channel(img, ch);
+        if let Ok(decomp) = haar_2d_forward(&channel_matrix) {
+            let band = decomp.band(EMBED_BAND);
+            let (bh, bw) = (band.len(), band[0].len());
+            let mut pair_sum = 0.0f64;
+            let mut pair_count = 0u64;
+            for (i, &(bx, by)) in positions.iter().enumerate() {
+                if (bx as usize) < bw && (by as usize) < bh {
+                    let coeff = band[by as usize][bx as usize] as f64;
+                    if i % 2 == 0 {
+                        pair_sum += coeff;
+                    } else {
+                        pair_sum -= coeff;
+                        pair_count += 1;
+                    }
+                }
+            }
+            if pair_count > 0 {
+                sum += pair_sum / pair_count as f64;
+                n += 1;
+            }
+        }
+    }
+    if n == 0 {
+        0.0
+    } else {
+        sum / n as f64
+    }
 }
 
 // ── Verify ────────────────────────────────────────────────────────────────────
@@ -304,6 +376,9 @@ pub fn prng_band_positions(seed: u64, band_w: u32, band_h: u32, count: usize) ->
     if band_w == 0 || band_h == 0 {
         return vec![];
     }
+    // Cap count to band capacity to avoid infinite loop on tiny images
+    let capacity = (band_w as usize) * (band_h as usize);
+    let count = count.min(capacity);
     let mut set = std::collections::HashSet::new();
     let mut state = seed;
     while set.len() < count {
@@ -386,7 +461,7 @@ mod tests {
         let original = img.clone();
         let geo = make_test_geometry(w, h);
 
-        let (n, _positions) = embed(&mut img, &geo, None).unwrap();
+        let (n, _positions) = embed(&mut img, &geo, None, None).unwrap();
         assert!(n > 0, "Expected some coefficients to be modified");
 
         // Image should be visually similar but not identical
@@ -458,7 +533,7 @@ mod tests {
         let bits_needed = rid.len() * 8 * crate::spread_spectrum::REDUNDANCY;
 
         // Embed with recipient ID
-        let (n, _positions) = embed(&mut img, &geo, Some(rid)).unwrap();
+        let (n, _positions) = embed(&mut img, &geo, Some(rid), None).unwrap();
         assert!(n > 0, "No coefficients modified");
 
         // Geometry-free extraction: self-sync seed → PRNG ID positions → decode
