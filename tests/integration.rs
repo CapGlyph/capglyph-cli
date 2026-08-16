@@ -62,6 +62,12 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     }
 }
 
@@ -202,6 +208,12 @@ fn from_geometry_matches_full_run() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     })
     .unwrap();
 
@@ -443,6 +455,12 @@ fn dct_preserves_alpha_channel() {
         strength: 0.95,
         color: false,
         save_geometry: None,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -550,6 +568,12 @@ fn dwt_watermark_embed_and_verify() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -609,6 +633,12 @@ fn dwt_watermark_survives_jpeg_q75() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -677,6 +707,12 @@ fn dwt_watermark_survives_scale() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -744,6 +780,12 @@ fn recipient_id_roundtrip() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&embed_args).unwrap();
 
@@ -789,6 +831,12 @@ fn secret_layer_key_roundtrip() {
         key: Some("k_test_123".to_string()),
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -850,6 +898,12 @@ fn secret_layer_dct_roundtrip() {
         key: Some("dct_key_42".to_string()),
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 

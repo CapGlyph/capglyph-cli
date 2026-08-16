@@ -232,6 +232,22 @@ pub struct EmbedArgs {
     /// Learned-mode watermark strength (0–1, default 0.95).
     #[arg(long, default_value_t = 0.95)]
     pub strength: f32,
+
+    /// Also sign the output with a C2PA manifest carrying the embed
+    /// parameters as the com.sigil.watermark assertion
+    #[cfg(feature = "c2pa")]
+    #[arg(long, requires_all = ["c2pa_cert", "c2pa_pkey"])]
+    pub c2pa: bool,
+
+    /// C2PA signing certificate PEM (with --c2pa)
+    #[cfg(feature = "c2pa")]
+    #[arg(long)]
+    pub c2pa_cert: Option<PathBuf>,
+
+    /// C2PA signing private key PEM (with --c2pa)
+    #[cfg(feature = "c2pa")]
+    #[arg(long)]
+    pub c2pa_pkey: Option<PathBuf>,
 }
 
 // ─── verify ──────────────────────────────────────────────────────────────────

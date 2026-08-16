@@ -366,3 +366,47 @@ fn cli_c2pa_sign_recipient_id_requires_mode() {
     ])
     .is_err());
 }
+
+#[test]
+fn embed_with_c2pa_signs_output_consistently() {
+    use sigil::cli::EmbedArgs;
+    use sigil::embed;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (cert, key) = sigil::c2pa::init_cert(Some("Dual Layer"), dir.path(), false).unwrap();
+
+    let input = dir.path().join("input.png");
+    let output = dir.path().join("output.png");
+    // 512×512 checkerboard-style gradient: recipient-id DCT embedding needs
+    // enough 8×8 blocks (128×128 has only 256 blocks < 512 needed → hang).
+    make_fixture_rgb(512, 512).save(&input).unwrap();
+
+    let args = EmbedArgs {
+        input: input.clone(),
+        output: Some(output.clone()),
+        mode: sigil::cli::EmbedMode::Dct,
+        stroke: 0.010,
+        detail: 60,
+        min_path_len: 5,
+        chaikin_iters: 3,
+        color: false,
+        key: None,
+        save_geometry: None,
+        from_geometry: None,
+        recipient_id: Some("carol07".to_string()),
+        model_dir: None,
+        strength: 0.95,
+        c2pa: true,
+        c2pa_cert: Some(cert),
+        c2pa_pkey: Some(key),
+    };
+    embed::run(&args).unwrap();
+
+    let report = sigil::c2pa::verify_image(&output).unwrap();
+    assert!(report.present);
+    assert_eq!(report.signature_status, "valid");
+    let claim = report.watermark_claim.expect("watermark claim");
+    assert_eq!(claim.mode, "dct");
+    assert_eq!(claim.recipient_id.as_deref(), Some("carol07"));
+    assert!(!claim.keyed);
+}
