@@ -3,3 +3,4 @@
 .worktrees/
 *.part
 .DS_Store
+docs/superpowers
