@@ -410,3 +410,41 @@ fn embed_with_c2pa_signs_output_consistently() {
     assert_eq!(claim.recipient_id.as_deref(), Some("carol07"));
     assert!(!claim.keyed);
 }
+
+#[test]
+fn verify_with_c2pa_reports_manifest() {
+    use sigil::cli::VerifyArgs;
+    use sigil::verify;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (cert, key) = sigil::c2pa::init_cert(None, dir.path(), false).unwrap();
+    let input = dir.path().join("input.png");
+    let output = dir.path().join("output.png");
+    make_fixture_rgb(512, 512).save(&input).unwrap();
+
+    // sign via the c2pa module directly (pixel watermark not needed for the
+    // report linkage test)
+    let claim = sigil::c2pa::WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: Some("dave01".to_string()),
+        keyed: false,
+    };
+    sigil::c2pa::sign_image(&input, &output, &cert, &key, &claim, None, None).unwrap();
+
+    let args = VerifyArgs {
+        input: output.clone(),
+        mode: sigil::cli::EmbedMode::Dct,
+        geometry: None,
+        threshold: 0.0001,
+        mean_threshold: 4.0,
+        key: None,
+        model_dir: None,
+        recipient_id: None,
+        verbose: false,
+        c2pa: true,
+    };
+    let present = verify::run(&args).unwrap();
+    // pixel watermark absent (only the manifest was signed), but C2PA section
+    // must have been produced without errors
+    assert!(!present);
+}

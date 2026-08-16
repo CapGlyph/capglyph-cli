@@ -294,6 +294,11 @@ pub struct VerifyArgs {
     /// Print full signal statistics
     #[arg(long)]
     pub verbose: bool,
+
+    /// Also read + verify the C2PA manifest and append its report (JSON)
+    #[cfg(feature = "c2pa")]
+    #[arg(long)]
+    pub c2pa: bool,
 }
 
 // ─── strip ───────────────────────────────────────────────────────────────────
