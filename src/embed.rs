@@ -65,150 +65,58 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
 
     // ── 5. Embed via selected mode ────────────────────────────────────────────
     match args.mode {
-        EmbedMode::Alpha => {
-            info!("Mode: alpha  stroke={}px", args.stroke);
-            let src_rgba = src_img.to_rgba8();
-            let wm_layer = render_watermark(&geometry, orig_w, orig_h, args.stroke)?;
-            let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
+        EmbedMode::Alpha | EmbedMode::Dct | EmbedMode::Dwt => {
+            let (out_img, block_info) = embed_to_image(
+                &src_img,
+                args.mode,
+                &geometry,
+                args.stroke,
+                args.recipient_id.as_deref(),
+                args.key.as_deref(),
+            )?;
+
+            // Persist block/position coordinates to the geometry file when a
+            // recipient-id was embedded (mirrors the old per-mode behaviour).
+            if args.recipient_id.is_some() {
+                if let (Some((_, blocks)), Some(ref save_path)) = (&block_info, &args.save_geometry)
+                {
+                    let mut geometry_with_blocks = geometry.clone();
+                    geometry_with_blocks.blocks = Some(blocks.clone());
+                    let json = geometry_with_blocks.to_json()?;
+                    std::fs::write(save_path, &json).with_context(|| {
+                        format!("Failed to update geometry file: {:?}", save_path)
+                    })?;
+                }
+            }
+
+            let rid_note = args
+                .recipient_id
+                .as_deref()
+                .map(|id| format!(" recipient={id}"))
+                .unwrap_or_default();
+            let count = block_info.as_ref().map(|(n, _)| *n).unwrap_or(0);
 
             if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
-                // Convert to RGB and save as JPEG
-                let rgb = image::DynamicImage::ImageRgba8(result).to_rgb8();
+                let rgb = match args.mode {
+                    EmbedMode::Alpha => out_img.to_rgb8(),
+                    _ => {
+                        let rgba = out_img.to_rgba8();
+                        let alphas: Vec<u8> = rgba.pixels().map(|p| p[3]).collect();
+                        composite_rgb_over_white(&out_img.to_rgb8(), &alphas, orig_w, orig_h)
+                    }
+                };
                 save_as_jpeg(&rgb, &output_path, 85)?;
-                println!("Watermark embedded [alpha→jpg] → {:?}", output_path);
+                println!(
+                    "Watermark embedded [{}→jpg, {} blocks{}] → {:?}",
+                    args.mode, count, rid_note, output_path
+                );
             } else {
-                // Save as PNG
-                info!("Saving output to: {:?}", output_path);
-                result
+                out_img
                     .save(&output_path)
                     .with_context(|| format!("Failed to save output: {:?}", output_path))?;
-                println!("Watermark embedded [alpha] → {:?}", output_path);
-            }
-        }
-        EmbedMode::Dct => {
-            info!("Mode: dct  delta={}", crate::dct::EMBED_DELTA);
-            // Preserve original alpha channel if the source has one.
-            // DCT operates only on RGB; alpha must be copied back to output.
-            let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
-                Some(src_img.to_rgba8().pixels().map(|p| p[3]).collect())
-            } else {
-                None
-            };
-
-            let mut rgb = src_img.to_rgb8();
-            let (n_blocks, blocks) = crate::dct::embed(
-                &mut rgb,
-                &geometry,
-                args.recipient_id.as_deref(),
-                args.key.as_deref(),
-            )?;
-
-            // If recipient_id is provided, update geometry with blocks for extraction
-            let mut geometry_with_blocks = geometry.clone();
-            if args.recipient_id.is_some() {
-                geometry_with_blocks.blocks = Some(blocks);
-                // Re-save geometry file if it was originally saved
-                if let Some(ref save_path) = args.save_geometry {
-                    info!(
-                        "Updating geometry file with block coordinates: {:?}",
-                        save_path
-                    );
-                    let json = geometry_with_blocks.to_json()?;
-                    std::fs::write(save_path, &json).with_context(|| {
-                        format!("Failed to update geometry file: {:?}", save_path)
-                    })?;
-                }
-            }
-
-            let rid_note = args
-                .recipient_id
-                .as_deref()
-                .map(|id| format!(" recipient={id}"))
-                .unwrap_or_default();
-
-            if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
-                // JPEG has no alpha — composite over white before encoding
-                let out_rgb = match &orig_alpha {
-                    Some(alphas) => composite_rgb_over_white(&rgb, alphas, orig_w, orig_h),
-                    None => rgb.clone(),
-                };
-                save_as_jpeg(&out_rgb, &output_path, 85)?;
                 println!(
-                    "Watermark embedded [dct→jpg, {} blocks{}] → {:?}",
-                    n_blocks, rid_note, output_path
-                );
-            } else {
-                // PNG: restore original alpha channel (or all-255 for opaque sources)
-                let rgba = match orig_alpha {
-                    Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
-                    None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
-                };
-                rgba.save(&output_path)
-                    .with_context(|| format!("Failed to save output: {:?}", output_path))?;
-                println!(
-                    "Watermark embedded [dct, {} blocks{}] → {:?}",
-                    n_blocks, rid_note, output_path
-                );
-            }
-        }
-        EmbedMode::Dwt => {
-            info!(
-                "Mode: dwt  strength={}",
-                crate::dwt_embed::DWT_EMBED_STRENGTH
-            );
-            let orig_alpha: Option<Vec<u8>> = if src_img.color().has_alpha() {
-                Some(src_img.to_rgba8().pixels().map(|p| p[3]).collect())
-            } else {
-                None
-            };
-
-            let mut rgb = src_img.to_rgb8();
-            let (n_coeffs, dwt_positions) = crate::dwt_embed::embed(
-                &mut rgb,
-                &geometry,
-                args.recipient_id.as_deref(),
-                args.key.as_deref(),
-            )?;
-
-            // Store positions in geometry when recipient_id is provided
-            let mut geometry_with_blocks = geometry.clone();
-            if args.recipient_id.is_some() {
-                geometry_with_blocks.blocks = Some(dwt_positions);
-                if let Some(ref save_path) = args.save_geometry {
-                    info!("Updating geometry file with DWT positions: {:?}", save_path);
-                    let json = geometry_with_blocks.to_json()?;
-                    std::fs::write(save_path, &json).with_context(|| {
-                        format!("Failed to update geometry file: {:?}", save_path)
-                    })?;
-                }
-            }
-
-            let rid_note = args
-                .recipient_id
-                .as_deref()
-                .map(|id| format!(" recipient={id}"))
-                .unwrap_or_default();
-
-            if output_path.extension().and_then(|e| e.to_str()) == Some("jpg") {
-                let out_rgb = match &orig_alpha {
-                    Some(alphas) => composite_rgb_over_white(&rgb, alphas, orig_w, orig_h),
-                    None => rgb.clone(),
-                };
-                save_as_jpeg(&out_rgb, &output_path, 85)?;
-                println!(
-                    "Watermark embedded [dwt→jpg, {} coefficients{}] → {:?}",
-                    n_coeffs, rid_note, output_path
-                );
-            } else {
-                let rgba = match orig_alpha {
-                    Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
-                    None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
-                };
-                rgba.save(&output_path)
-                    .with_context(|| format!("Failed to save output: {:?}", output_path))?;
-                println!(
-                    "Watermark embedded [dwt, {} coefficients{}] → {:?}",
-                    n_coeffs, rid_note, output_path
+                    "Watermark embedded [{}, {} blocks{}] → {:?}",
+                    args.mode, count, rid_note, output_path
                 );
             }
         }
@@ -305,6 +213,72 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// In-memory embed result: the watermarked image plus the block/position
+/// coordinates used for recipient-id extraction (dct/dwt only; `None` for alpha).
+pub(crate) type EmbedOutput = (image::DynamicImage, Option<(u64, Vec<(u32, u32)>)>);
+
+/// In-memory embed core shared by the CLI (`embed::embed`) and the wasm byte
+/// API (`wasm_api::embed_bytes`). Returns the watermarked RGBA image plus the
+/// block/position coordinates used for recipient-id extraction (dct/dwt only;
+/// `None` for alpha).
+pub(crate) fn embed_to_image(
+    img: &image::DynamicImage,
+    mode: EmbedMode,
+    geometry: &GeometryFile,
+    stroke: f32,
+    recipient_id: Option<&str>,
+    key: Option<&str>,
+) -> Result<EmbedOutput> {
+    let (orig_w, orig_h) = (img.width(), img.height());
+
+    match mode {
+        EmbedMode::Alpha => {
+            let src_rgba = img.to_rgba8();
+            let wm_layer = render_watermark(geometry, orig_w, orig_h, stroke)?;
+            let result = composite(&src_rgba, &wm_layer, orig_w, orig_h);
+            Ok((image::DynamicImage::ImageRgba8(result), None))
+        }
+        EmbedMode::Dct => {
+            let orig_alpha: Option<Vec<u8>> = if img.color().has_alpha() {
+                Some(img.to_rgba8().pixels().map(|p| p[3]).collect())
+            } else {
+                None
+            };
+            let mut rgb = img.to_rgb8();
+            let (n_blocks, blocks) = crate::dct::embed(&mut rgb, geometry, recipient_id, key)?;
+            let rgba = match orig_alpha {
+                Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
+                None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
+            };
+            Ok((
+                image::DynamicImage::ImageRgba8(rgba),
+                Some((n_blocks, blocks)),
+            ))
+        }
+        EmbedMode::Dwt => {
+            let orig_alpha: Option<Vec<u8>> = if img.color().has_alpha() {
+                Some(img.to_rgba8().pixels().map(|p| p[3]).collect())
+            } else {
+                None
+            };
+            let mut rgb = img.to_rgb8();
+            let (n_coeffs, dwt_positions) =
+                crate::dwt_embed::embed(&mut rgb, geometry, recipient_id, key)?;
+            let rgba = match orig_alpha {
+                Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
+                None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
+            };
+            Ok((
+                image::DynamicImage::ImageRgba8(rgba),
+                Some((n_coeffs, dwt_positions)),
+            ))
+        }
+        EmbedMode::Learned => anyhow::bail!(
+            "learned mode is not supported in the in-memory embed API (requires ONNX Runtime)"
+        ),
+    }
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
