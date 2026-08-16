@@ -651,15 +651,19 @@ pub fn stable_seed(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> u64 {
 
 /// Generate a deterministic ordered block list from a seed.
 ///
-/// Returns exactly `count` blocks in a reproducible order — used for
-/// recipient ID bit placement so extraction can reconstruct the same
-/// block sequence without the geometry file.
+/// Returns `min(count, total 8×8 blocks)` blocks in a reproducible order —
+/// used for recipient ID bit placement so extraction can reconstruct the same
+/// block sequence without the geometry file. The count is capped at the number
+/// of available blocks so the loop always terminates; callers requesting more
+/// blocks than the image has degrade gracefully (fewer sync/ID/secret blocks).
 pub fn prng_block_list(seed: u64, iw: u32, ih: u32, count: usize) -> Vec<(u32, u32)> {
     let total_bx = iw / 8;
     let total_by = ih / 8;
     if total_bx == 0 || total_by == 0 {
         return vec![];
     }
+    let max_blocks = (total_bx as usize) * (total_by as usize);
+    let count = count.min(max_blocks);
     let mut set = std::collections::HashSet::new();
     let mut state = seed;
     while set.len() < count {
@@ -800,6 +804,32 @@ mod tests {
             "spatial perturbation {:.4} too large (limit 5.0 / 255)",
             max_diff
         );
+    }
+
+    /// prng_block_list must terminate (and return every block) when the
+    /// requested count exceeds the number of 8×8 blocks in the image.
+    /// Regression test: 128×128 has 16×16 = 256 blocks; requesting 512
+    /// previously looped forever.
+    #[test]
+    fn prng_block_list_caps_at_total_blocks() {
+        let blocks = prng_block_list(SEED_MAGIC, 128, 128, 512);
+        assert_eq!(blocks.len(), 256);
+        for &(bx, by) in &blocks {
+            assert!(bx < 16 && by < 16, "block ({bx},{by}) out of range");
+        }
+        // deterministic: same seed + size yields the same ordered list
+        let again = prng_block_list(SEED_MAGIC, 128, 128, 512);
+        assert_eq!(blocks, again);
+    }
+
+    /// When the image has more than enough blocks, the exact count is returned.
+    #[test]
+    fn prng_block_list_returns_requested_count_when_plenty() {
+        // 512×512 = 64×64 = 4096 blocks; request 512 → exactly 512.
+        let blocks = prng_block_list(SEED_MAGIC, 512, 512, 512);
+        assert_eq!(blocks.len(), 512);
+        let again = prng_block_list(SEED_MAGIC, 512, 512, 512);
+        assert_eq!(blocks, again);
     }
 }
 
