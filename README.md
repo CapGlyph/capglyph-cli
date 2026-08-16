@@ -59,6 +59,36 @@ sigil extract leaked.png --mode learned
 | known-cover diff          | ✗ (unavoidable) |  ✗  |       ✗        |    ✗    |
 | img2img regeneration      |        ✗        |  ✗  |       ✗        |    ✗    |
 
+## Content Credentials (C2PA)
+
+Sigil can also sign images with C2PA content credentials — a standards-based
+provenance manifest. Build with the `c2pa` cargo feature (release binaries
+include it):
+
+```bash
+sigil c2pa init --org "My Studio"          # self-signed ES256 cert + key
+sigil c2pa sign photo.jpg -o signed.jpg \
+  --cert sigil-certs/cert.pem --pkey sigil-certs/private.key \
+  --recipient-id alice01 --mode dct
+sigil c2pa verify signed.jpg               # JSON report (0 = valid, 1 = invalid, 2 = unsigned)
+
+# Dual-layer: pixel watermark + provenance manifest in one step
+sigil embed photo.png -m dct --recipient-id alice01 --c2pa \
+  --cert sigil-certs/cert.pem --pkey sigil-certs/private.key
+sigil verify photo_sigil.png --c2pa
+```
+
+The manifest's `com.sigil.watermark` assertion records the watermark mode,
+recipient ID, and keyed flag — so the pixel layer and the manifest
+cross-reference each other. The `c2pa.created` action's digital source type
+defaults to `digitalCapture`; override with `--source-type`
+(`capture | algorithmic | composite | trained` or a full IPTC URI).
+
+**Trust model:** certificates are self-signed, so a valid signature proves
+"was signed by the holder of this key", not "was signed by a known entity".
+Pin the reported signer CN + validity window for real provenance. The `--key`
+HMAC secret is never written into the manifest (only a `keyed: true` flag).
+
 ## Security model
 
 - **Public layer** — presence detection (`verify`)

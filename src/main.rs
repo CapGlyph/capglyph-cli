@@ -38,6 +38,13 @@ fn main() -> anyhow::Result<()> {
             sigil::learned::fetch_models(&dir)?;
             println!("Models downloaded to {:?}", dir);
         }
+        #[cfg(feature = "c2pa")]
+        Commands::C2pa(args) => {
+            let code = sigil::c2pa_cli::run(&args.command)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
     }
 
     Ok(())

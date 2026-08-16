@@ -64,6 +64,12 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             model_dir: None,
             strength: 0.95,
             key: None,
+            #[cfg(feature = "c2pa")]
+            c2pa: false,
+            #[cfg(feature = "c2pa")]
+            c2pa_cert: None,
+            #[cfg(feature = "c2pa")]
+            c2pa_pkey: None,
         };
 
         match embed::embed(&embed_args) {

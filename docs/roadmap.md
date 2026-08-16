@@ -32,7 +32,7 @@ The Q-series attack studies (`Q1.3`–`Q1.14`, `Q4.1`–`Q4.6`) cover:
 
 ### Short term (no research needed)
 
-- [ ] C2PA manifest integration (pixel watermark + content credentials)
+- [x] C2PA manifest integration (pixel watermark + content credentials)
 - [ ] Web monitor/crawler service (embed + periodic leak scanning)
 - [ ] `learned` mode model variant selection (Q/C/P)
 

@@ -36,7 +36,7 @@ with an open, auditable scheme.
 - [ ] Interactive web demo (upload → attack → extract)
 - [ ] Public attack-matrix page (open weakness disclosure vs Steg.AI)
 - [ ] Hacker News / security-community launch
-- [ ] C2PA manifest integration (pixel watermark + content credentials)
+- [x] C2PA manifest integration (pixel watermark + content credentials)
 
 ## Phase 3: Monetization (demand-driven, after users exist)
 

@@ -56,6 +56,16 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
         }
     }
 
+    #[cfg(feature = "c2pa")]
+    if args.c2pa {
+        let report = crate::c2pa::verify_image(&args.input)?;
+        println!("C2PA SECTION");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).context("Failed to serialize C2PA report")?
+        );
+    }
+
     Ok(present)
 }
 

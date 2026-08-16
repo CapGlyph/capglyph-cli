@@ -72,8 +72,8 @@ jobs:
           key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: release-${{ runner.os }}-${{ matrix.target }}-
 
-      - name: Build release (learned feature)
-        run: cargo build --release --features learned --target ${{ matrix.target }}
+      - name: Build release (learned+c2pa features)
+        run: cargo build --release --features learned,c2pa --target ${{ matrix.target }}
 
       - name: Rename artifact (Linux/macOS)
         if: ${{ !contains(matrix.target, 'windows') }}
@@ -204,7 +204,7 @@ jobs:
 
           build() {
             cd "sigil-\$pkgver"
-            cargo build --release --locked --features learned
+            cargo build --release --locked --features learned,c2pa
           }
 
           package() {

@@ -258,6 +258,52 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
         }
     }
 
+    #[cfg(feature = "c2pa")]
+    if args.c2pa {
+        use crate::c2pa::WatermarkClaim;
+        let cert = args
+            .c2pa_cert
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--c2pa requires --c2pa-cert"))?;
+        let pkey = args
+            .c2pa_pkey
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("--c2pa requires --c2pa-pkey"))?;
+        let output = match &args.output {
+            Some(p) => p.clone(),
+            None => resolve_output(&args.input, None, "_sigil", "png"),
+        };
+        // sign_image rejects in-place; sign to a hidden sibling temp file
+        // with the SAME extension (c2pa derives the format from the path),
+        // then rename into place
+        let fname = output
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "out".to_string());
+        let tmp = output
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join(format!(".c2pa_tmp_{}_{fname}", std::process::id()));
+        let claim = WatermarkClaim {
+            mode: args.mode.to_string(),
+            recipient_id: args.recipient_id.clone(),
+            keyed: args.key.is_some(),
+        };
+        if let Err(e) = crate::c2pa::sign_image(&output, &tmp, cert, pkey, &claim, None, None)
+            .with_context(|| "C2PA signing of the watermarked output failed")
+        {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        if let Err(e) = std::fs::rename(&tmp, &output)
+            .with_context(|| format!("Failed to move C2PA-signed output into place: {output:?}"))
+        {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        println!("C2PA manifest signed on output");
+    }
+
     Ok(())
 }
 
@@ -298,6 +344,12 @@ pub fn extract_and_build_geometry(
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
 
     extract_geometry(&dyn_img, width, height, &args)

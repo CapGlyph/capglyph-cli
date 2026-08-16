@@ -62,6 +62,12 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     }
 }
 
@@ -103,6 +109,8 @@ fn verify_present_after_embed() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     })
     .unwrap();
 
@@ -124,6 +132,8 @@ fn verify_absent_for_plain_rgb() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     })
     .unwrap();
 
@@ -162,6 +172,8 @@ fn verify_absent_after_strip() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     })
     .unwrap();
 
@@ -202,6 +214,12 @@ fn from_geometry_matches_full_run() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     })
     .unwrap();
 
@@ -336,6 +354,8 @@ fn dct_watermark_survives_jpeg_q75() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let result = verify::run(&verify_args).unwrap();
     assert!(result, "DCT watermark should survive JPEG q75");
@@ -379,6 +399,8 @@ fn dct_watermark_degrades_at_jpeg_q50() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     });
     // No assertion: q50 behavior on tiny images is documented, not required.
 }
@@ -416,6 +438,8 @@ fn alpha_watermark_destroyed_by_jpeg() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let result = verify::run(&verify_args).unwrap();
     assert!(!result, "Alpha watermark should be destroyed by JPEG");
@@ -443,6 +467,12 @@ fn dct_preserves_alpha_channel() {
         strength: 0.95,
         color: false,
         save_geometry: None,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -480,6 +510,8 @@ fn dct_preserves_alpha_channel() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let result = verify::run(&verify_args).unwrap();
     assert!(result, "DCT watermark should survive on RGBA input");
@@ -550,6 +582,12 @@ fn dwt_watermark_embed_and_verify() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -563,6 +601,8 @@ fn dwt_watermark_embed_and_verify() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let present = verify::run(&verify_args).unwrap();
     assert!(
@@ -609,6 +649,12 @@ fn dwt_watermark_survives_jpeg_q75() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -631,6 +677,8 @@ fn dwt_watermark_survives_jpeg_q75() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let present = verify::run(&verify_args).unwrap();
     assert!(present, "DWT watermark should survive JPEG q=75");
@@ -677,6 +725,12 @@ fn dwt_watermark_survives_scale() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -700,6 +754,8 @@ fn dwt_watermark_survives_scale() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let present = verify::run(&verify_args).unwrap();
     assert!(present, "DWT watermark should survive 0.75× scaling");
@@ -744,6 +800,12 @@ fn recipient_id_roundtrip() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&embed_args).unwrap();
 
@@ -789,6 +851,12 @@ fn secret_layer_key_roundtrip() {
         key: Some("k_test_123".to_string()),
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
@@ -803,6 +871,8 @@ fn secret_layer_key_roundtrip() {
         model_dir: None,
         recipient_id: None,
         verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
     };
     let present = verify::run(&verify_args).unwrap();
     assert!(present, "public layer should be present");
@@ -850,6 +920,12 @@ fn secret_layer_dct_roundtrip() {
         key: Some("dct_key_42".to_string()),
         model_dir: None,
         strength: 0.95,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+        #[cfg(feature = "c2pa")]
+        c2pa_cert: None,
+        #[cfg(feature = "c2pa")]
+        c2pa_pkey: None,
     };
     embed::run(&args).unwrap();
 
