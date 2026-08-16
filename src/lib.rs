@@ -19,3 +19,4 @@ pub mod signal;
 pub mod spread_spectrum;
 pub mod strip;
 pub mod verify;
+pub mod wasm_api;

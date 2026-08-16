@@ -24,8 +24,10 @@ clap = { version = "4.5", features = ["derive"] }
 # Image I/O
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
-# Vectomancy geometry/raster pipeline (path-based)
-vectomancy = { path = "../vectomancy", default-features = false }
+# Vectomancy geometry/raster pipeline (path-based).
+# NOTE: the `vectomancy` facade is intentionally NOT a dependency — sigil only
+# uses vectomancy-raster + vectomancy-geometry, and the facade pulls tera/zip/
+# flate2/rand into the wasm graph for nothing.
 vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster" }
 vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry" }
 
@@ -41,7 +43,6 @@ tiny-skia = "0.11"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Glob pattern matching for batch operations
 glob = "0.3"
@@ -51,8 +52,8 @@ digest = "0.11.3"
 
 # Learned watermark (TrustMark ONNX, optional — pulls in ONNX Runtime)
 trustmark = { version = "0.2", optional = true }
-directories = "6.0.0"
-ureq = "3.4.0"
+directories = { version = "6.0.0", optional = true }
+ureq = { version = "3.4.0", optional = true }
 
 # C2PA content credentials (optional — pure-Rust crypto backend, no OpenSSL)
 c2pa = { version = "0.90", default-features = false, features = ["rust_native_crypto", "file_io"], optional = true }
@@ -60,9 +61,16 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"]
 x509-parser = { version = "0.18", optional = true }
 time = { version = "0.3", features = ["formatting"], optional = true }
 
+# tracing-subscriber is used only by the CLI binary (src/main.rs), which is
+# never built for wasm. Target-gating removes it from the wasm dependency
+# graph entirely (gating usage alone would leave it in `cargo tree --target
+# wasm32-unknown-unknown`).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 [features]
 default = []
-learned = ["dep:trustmark"]
+learned = ["dep:trustmark", "dep:directories", "dep:ureq"]
 c2pa = ["dep:c2pa", "dep:rcgen", "dep:x509-parser", "dep:time"]
 
 [profile.release]

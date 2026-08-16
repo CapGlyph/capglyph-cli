@@ -70,7 +70,15 @@ fn extract_from_learned(_img: image::DynamicImage, _args: &ExtractArgs) -> Resul
     );
 }
 
-fn extract_from_dct(img: &image::RgbImage, id_length: usize, _w: u32, _h: u32) -> Result<String> {
+/// DCT recipient-id extraction from an in-memory RGB image (geometry-free:
+/// the block seed is recovered from self-sync blocks). `id_length` is the
+/// expected recipient-id length in characters.
+pub fn extract_from_dct(
+    img: &image::RgbImage,
+    id_length: usize,
+    _w: u32,
+    _h: u32,
+) -> Result<String> {
     use crate::dct::{
         dct8x8_forward, extract_block, prng_block_list, ID_TARGET_U, ID_TARGET_V, SEED_MAGIC,
     };
@@ -151,7 +159,10 @@ fn extract_from_dct(img: &image::RgbImage, id_length: usize, _w: u32, _h: u32) -
     Ok(decoded)
 }
 
-fn extract_from_dwt(img: &image::RgbImage, id_length: usize, w: u32, h: u32) -> Result<String> {
+/// DWT recipient-id extraction from an in-memory RGB image (geometry-free:
+/// the seed is recovered from self-sync LH positions). `id_length` is the
+/// expected recipient-id length in characters.
+pub fn extract_from_dwt(img: &image::RgbImage, id_length: usize, w: u32, h: u32) -> Result<String> {
     use crate::dwt::haar_2d_forward;
     use crate::dwt_embed::{prng_band_positions, EMBED_BAND, SEED_MAGIC, SYNC_REDUNDANCY};
 
