@@ -27,16 +27,17 @@ pub fn run(cmd: &C2paCommand) -> Result<i32> {
         }
         C2paCommand::Sign(args) => {
             let output = resolve_sign_output(args)?;
+            let keyed = args.key.is_some();
             let claim = match (&args.recipient_id, &args.mode) {
                 (Some(id), Some(mode)) => WatermarkClaim {
                     mode: mode.to_string(),
                     recipient_id: Some(id.clone()),
-                    keyed: args.key.is_some(),
+                    keyed,
                 },
                 _ => WatermarkClaim {
                     mode: "none".to_string(),
                     recipient_id: None,
-                    keyed: false,
+                    keyed,
                 },
             };
             crate::c2pa::sign_image(

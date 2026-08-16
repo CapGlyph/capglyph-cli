@@ -198,6 +198,27 @@ fn sign_image_wrong_key_fails_validation() {
     );
 }
 
+#[test]
+fn verify_image_reports_invalid_for_mismatched_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cert_a, _key_a) = init_cert(None, &dir.path().join("a"), false).unwrap();
+    let (_cert_b, key_b) = init_cert(None, &dir.path().join("b"), false).unwrap();
+
+    let input = dir.path().join("input.png");
+    let output = dir.path().join("signed.png");
+    make_fixture_rgb(32, 32).save(&input).unwrap();
+    let claim = WatermarkClaim {
+        mode: "dct".to_string(),
+        recipient_id: None,
+        keyed: false,
+    };
+    sign_image(&input, &output, &cert_a, &key_b, &claim, None, None).unwrap();
+
+    let report = verify_image(&output).unwrap();
+    assert!(report.present);
+    assert_eq!(report.signature_status, "invalid");
+}
+
 fn signed_actions(output: &std::path::Path) -> c2pa::assertions::Actions {
     let reader = c2pa::Reader::from_context(c2pa::Context::new())
         .with_file(output)
