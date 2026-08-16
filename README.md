@@ -18,11 +18,43 @@ secret key. Four independent embedding technologies:
 | `dwt`     | Haar LH-band modulation        | default              |
 | `learned` | Adobe TrustMark CNN (ONNX)     | `--features learned` |
 
-## Build
+## Install
+
+Prebuilt binaries for Linux, macOS, and Windows (including the `learned` and
+`c2pa` features) are attached to each
+[GitHub Release](https://github.com/Xuepoo/sigil/releases).
+
+**macOS / Linux — Homebrew:**
+
+```bash
+brew tap xuepoo/tap
+brew install sigil
+```
+
+**Windows — Scoop:**
+
+```powershell
+scoop bucket add xuepoo https://github.com/Xuepoo/scoop-bucket
+scoop install sigil
+```
+
+**Arch Linux — AUR:**
+
+```bash
+yay -S sigil-wm-bin      # prebuilt binary (recommended)
+# or build from source:
+yay -S sigil-wm
+```
+
+**Linux — deb / rpm / pkg.tar.zst:** download from the
+[latest release](https://github.com/Xuepoo/sigil/releases/latest).
+
+## Build from source
 
 ```bash
 cargo build --release                    # alpha/dct/dwt
 cargo build --release --features learned # + learned mode (ONNX runtime)
+cargo build --release --features c2pa     # + C2PA content credentials
 ```
 
 ## Quick start

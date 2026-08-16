@@ -15,11 +15,42 @@ Sigil 将亚感知水印嵌入 PNG/JPEG 图像，之后可验证其存在性、�
 | `dwt`     | Haar LH 频带调制            | 默认                 |
 | `learned` | Adobe TrustMark CNN（ONNX） | `--features learned` |
 
-## 构建
+## 安装
+
+Linux、macOS 和 Windows 的预编译二进制（含 `learned` 与 `c2pa` 特性）随每个
+[GitHub Release](https://github.com/Xuepoo/sigil/releases) 发布。
+
+**macOS / Linux — Homebrew：**
+
+```bash
+brew tap xuepoo/tap
+brew install sigil
+```
+
+**Windows — Scoop：**
+
+```powershell
+scoop bucket add xuepoo https://github.com/Xuepoo/scoop-bucket
+scoop install sigil
+```
+
+**Arch Linux — AUR：**
+
+```bash
+yay -S sigil-wm-bin      # 预编译二进制（推荐）
+# 或从源码构建：
+yay -S sigil-wm
+```
+
+**Linux — deb / rpm / pkg.tar.zst：** 从
+[最新 release](https://github.com/Xuepoo/sigil/releases/latest) 下载。
+
+## 从源码构建
 
 ```bash
 cargo build --release                    # alpha/dct/dwt
 cargo build --release --features learned # + learned 模式（ONNX 运行时）
+cargo build --release --features c2pa     # + C2PA 内容凭证
 ```
 
 ## 快速上手
