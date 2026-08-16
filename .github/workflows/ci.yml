@@ -100,3 +100,34 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-
       - name: Test (learned+c2pa features)
         run: cargo test --features learned,c2pa
+
+  wasm-check:
+    name: wasm32 check (lib)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sigil
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: sigil
+      - uses: actions/checkout@v7
+        with:
+          repository: Xuepoo/vectomancy
+          path: vectomancy
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sigil/target
+            vectomancy/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Check lib compiles for wasm32
+        env:
+          RUSTFLAGS: "-C target-cpu=generic"
+        run: cargo check --lib --target wasm32-unknown-unknown --no-default-features
