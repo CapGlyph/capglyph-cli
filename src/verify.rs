@@ -129,6 +129,17 @@ fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 }
 
 /// DCT-domain verification: check if marked blocks still have offset in target coefficient.
+fn sampled_blocks(blocks: &HashSet<(u32, u32)>, limit: usize) -> Vec<(u32, u32)> {
+    let mut sorted: Vec<_> = blocks.iter().copied().collect();
+    sorted.sort_unstable();
+    if sorted.len() <= limit {
+        return sorted;
+    }
+    (0..limit)
+        .map(|index| sorted[index * sorted.len() / limit])
+        .collect()
+}
+
 fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let rgb = img.to_rgb8();
     let (iw, ih) = rgb.dimensions();
@@ -195,28 +206,43 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
             }
         }
 
-        if path_pixels.is_empty() {
-            // Solid-color image: use PRNG with image hash as seed
-            let seed = crate::dct::image_seed(&rgb);
-            crate::dct::prng_blocks_from_seed(seed, iw, ih)
-        } else {
-            let mut set = HashSet::new();
-            for (px, py) in &path_pixels {
-                let bx = px / 8;
-                let by = py / 8;
-                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                    set.insert((bx, by));
+        let mut skeleton_blocks = HashSet::new();
+        for (px, py) in &path_pixels {
+            let bx = px / 8;
+            let by = py / 8;
+            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                skeleton_blocks.insert((bx, by));
+            }
+        }
+        let target_budget = skeleton_blocks.len().max(32);
+
+        match args.placement {
+            crate::cli::PlacementStrategy::Prng => crate::dct::prng_blocks_with_budget(
+                &rgb,
+                iw,
+                ih,
+                args.recipient_id.as_deref(),
+                target_budget,
+            ),
+            crate::cli::PlacementStrategy::Edge => {
+                crate::dct::edge_blocks(&rgb, iw, ih, target_budget)
+            }
+            crate::cli::PlacementStrategy::Skeleton => {
+                if skeleton_blocks.is_empty() {
+                    let seed = crate::dct::image_seed(&rgb);
+                    crate::dct::prng_blocks_from_seed(seed, iw, ih)
+                } else {
+                    skeleton_blocks
                 }
             }
-            set
         }
     };
 
     // Sample blocks: mean-signal detection. Embedding adds +EMBED_DELTA to
     // F[2,3]; a clean image has ~zero mean at these positions.
     let (u, v) = (2, 3);
-    let sample_size = skeleton_blocks.len().min(100);
-    let sample: Vec<_> = skeleton_blocks.iter().take(sample_size).copied().collect();
+    let sample = sampled_blocks(&skeleton_blocks, 100);
+    let sample_size = sample.len();
 
     let mut coeff_sum = 0.0f64;
     let mut marked_count = 0;
@@ -431,4 +457,28 @@ fn verify_learned(_img: &image::DynamicImage, _args: &VerifyArgs) -> Result<bool
     anyhow::bail!(
         "learned mode requires the `learned` cargo feature (build with --features learned)"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sampled_blocks;
+    use std::collections::HashSet;
+
+    #[test]
+    fn dct_block_sample_is_independent_of_insertion_order() {
+        let ascending: HashSet<_> = (0..200).map(|index| (index % 20, index / 20)).collect();
+        let descending: HashSet<_> = (0..200)
+            .rev()
+            .map(|index| (index % 20, index / 20))
+            .collect();
+
+        let first = sampled_blocks(&ascending, 100);
+        let second = sampled_blocks(&descending, 100);
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 100);
+        assert!(first.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert_eq!(first.first(), Some(&(0, 0)));
+        assert!(first.last().is_some_and(|(x, _)| *x >= 19));
+    }
 }

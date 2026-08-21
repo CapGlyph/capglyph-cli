@@ -4212,14 +4212,14 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vectomancy-geometry"
-version = "8.0.0"
+version = "8.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "vectomancy-raster"
-version = "8.0.0"
+version = "8.1.0"
 dependencies = [
  "image",
  "imageproc",

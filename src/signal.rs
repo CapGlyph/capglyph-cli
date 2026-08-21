@@ -43,6 +43,7 @@ impl SignalMetrics {
         let mut mae_sum: f64 = 0.0;
         let mut alpha_hist = [0u64; 256];
 
+        #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
         for chunk in pixels.chunks_exact(4) {
             let r = chunk[0] as f64;
             let g = chunk[1] as f64;

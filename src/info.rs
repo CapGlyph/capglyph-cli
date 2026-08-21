@@ -69,7 +69,7 @@ fn info_dct(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) ->
         }
     };
 
-    let metrics = crate::dct::verify(&rgb, &geometry)?;
+    let metrics = crate::dct::verify(&rgb, &geometry, &crate::cli::PlacementStrategy::Skeleton)?;
 
     println!("Mode:                 dct");
     println!("Image size:           {}×{} ({} pixels)", w, h, w * h);

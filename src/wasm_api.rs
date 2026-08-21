@@ -49,8 +49,15 @@ pub fn embed_bytes(
         },
     )?;
 
-    let (out_img, _) =
-        crate::embed::embed_to_image(&img, mode, &geometry, 0.010, recipient_id, key)?;
+    let (out_img, _) = crate::embed::embed_to_image(
+        &img,
+        mode,
+        &geometry,
+        0.010,
+        recipient_id,
+        key,
+        &crate::cli::PlacementStrategy::Skeleton,
+    )?;
 
     let mut buf = std::io::Cursor::new(Vec::new());
     out_img
@@ -76,7 +83,8 @@ pub fn verify_bytes(src: &[u8], mode: &str) -> Result<bool> {
         EmbedMode::Dct => {
             let rgb = img.to_rgb8();
             let geometry = crate::verify::extract_geometry_from_image(&img)?;
-            let metrics = crate::dct::verify(&rgb, &geometry)?;
+            let metrics =
+                crate::dct::verify(&rgb, &geometry, &crate::cli::PlacementStrategy::Skeleton)?;
             Ok(metrics.is_present(4.0))
         }
         EmbedMode::Dwt => {

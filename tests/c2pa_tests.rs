@@ -403,6 +403,7 @@ fn embed_with_c2pa_signs_output_consistently() {
     make_fixture_rgb(512, 512).save(&input).unwrap();
 
     let args = EmbedArgs {
+        placement: sigil::cli::PlacementStrategy::Skeleton,
         input: input.clone(),
         output: Some(output.clone()),
         mode: sigil::cli::EmbedMode::Dct,
@@ -453,6 +454,7 @@ fn verify_with_c2pa_reports_manifest() {
     sigil::c2pa::sign_image(&input, &output, &cert, &key, &claim, None, None).unwrap();
 
     let args = VerifyArgs {
+        placement: sigil::cli::PlacementStrategy::Skeleton,
         input: output.clone(),
         mode: sigil::cli::EmbedMode::Dct,
         geometry: None,

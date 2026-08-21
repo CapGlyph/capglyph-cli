@@ -121,6 +121,13 @@ defaults to `digitalCapture`; override with `--source-type`
 Pin the reported signer CN + validity window for real provenance. The `--key`
 HMAC secret is never written into the manifest (only a `keyed: true` flag).
 
+## Placement Strategies (Evaluation)
+
+For empirical evaluation and baseline comparisons, Sigil supports three block-placement strategies (configurable via `--placement`):
+* `skeleton` (default): Places the watermark along the image's geometric topology paths (edges and ridges).
+* `edge`: A competitive baseline that targets standard high-variance edge blocks.
+* `prng`: An internal control that distributes the watermark uniform-randomly across the image.
+
 ## Security model
 
 - **Public layer** — presence detection (`verify`)
