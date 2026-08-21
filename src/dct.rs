@@ -79,26 +79,36 @@ pub fn embed(
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
     secret_key: Option<&str>,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
     let (iw, ih) = img.dimensions();
 
     // Collect all skeleton pixels via Bresenham
     let path_pixels = collect_path_pixels(geometry, iw, ih);
 
-    let block_set = if path_pixels.is_empty() {
-        // Fallback: no skeleton (solid colors, logos) → PRNG scatter
-        prng_blocks(img, iw, ih, recipient_id)
-    } else {
-        // Normal path: skeleton-guided blocks
-        let mut set = std::collections::HashSet::new();
-        for (px, py) in &path_pixels {
-            let bx = px / 8;
-            let by = py / 8;
-            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                set.insert((bx, by));
+    let mut skeleton_blocks = std::collections::HashSet::new();
+    for (px, py) in &path_pixels {
+        let bx = px / 8;
+        let by = py / 8;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            skeleton_blocks.insert((bx, by));
+        }
+    }
+
+    let target_budget = skeleton_blocks.len().max(32);
+
+    let block_set = match placement {
+        crate::cli::PlacementStrategy::Prng => {
+            prng_blocks_with_budget(img, iw, ih, recipient_id, target_budget)
+        }
+        crate::cli::PlacementStrategy::Edge => edge_blocks(img, iw, ih, target_budget),
+        crate::cli::PlacementStrategy::Skeleton => {
+            if skeleton_blocks.is_empty() {
+                prng_blocks(img, iw, ih, recipient_id)
+            } else {
+                skeleton_blocks
             }
         }
-        set
     };
 
     let n_blocks = block_set.len() as u64;
@@ -321,6 +331,7 @@ impl DctSignalMetrics {
 pub fn verify(
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<DctSignalMetrics> {
     let (iw, ih) = img.dimensions();
 
@@ -530,6 +541,85 @@ fn collect_path_pixels(geometry: &GeometryFile, iw: u32, ih: u32) -> Vec<(u32, u
         }
     }
     out
+}
+
+pub fn prng_blocks_with_budget(
+    img: &image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
+    iw: u32,
+    ih: u32,
+    recipient_id: Option<&str>,
+    budget: usize,
+) -> std::collections::HashSet<(u32, u32)> {
+    let raw = img.as_raw();
+    let sample = &raw[..raw.len().min(4096)];
+    let mut seed = fnv1a_hash(sample);
+    if let Some(id) = recipient_id {
+        seed ^= fnv1a_hash(id.as_bytes());
+    }
+    let total_bx = iw / 8;
+    let total_by = ih / 8;
+    let total_blocks = total_bx * total_by;
+    let target = budget.min(total_blocks as usize) as u32;
+
+    let mut set = std::collections::HashSet::new();
+    while set.len() < target as usize {
+        seed = lcg_next(seed);
+        let bx = ((seed >> 32) as u32) % total_bx;
+        let by = (seed as u32) % total_by;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            set.insert((bx, by));
+        }
+    }
+    set
+}
+
+pub fn edge_blocks(
+    img: &image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
+    iw: u32,
+    ih: u32,
+    budget: usize,
+) -> std::collections::HashSet<(u32, u32)> {
+    let mut sobel = vec![vec![0.0f32; ih as usize]; iw as usize];
+    for y in 1..ih - 1 {
+        for x in 1..iw - 1 {
+            let get_luma = |px, py| {
+                let p = img.get_pixel(px, py);
+                p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114
+            };
+            let tl = get_luma(x - 1, y - 1);
+            let tc = get_luma(x, y - 1);
+            let tr = get_luma(x + 1, y - 1);
+            let cl = get_luma(x - 1, y);
+            let cr = get_luma(x + 1, y);
+            let bl = get_luma(x - 1, y + 1);
+            let bc = get_luma(x, y + 1);
+            let br = get_luma(x + 1, y + 1);
+
+            let gx = -tl - 2.0 * cl - bl + tr + 2.0 * cr + br;
+            let gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+            sobel[x as usize][y as usize] = (gx * gx + gy * gy).sqrt();
+        }
+    }
+
+    let mut block_densities = Vec::with_capacity((iw / 8 * ih / 8) as usize);
+    for by in 0..(ih / 8) {
+        for bx in 0..(iw / 8) {
+            let mut sum = 0.0;
+            for dy in 0..8 {
+                for dx in 0..8 {
+                    sum += sobel[(bx * 8 + dx) as usize][(by * 8 + dy) as usize];
+                }
+            }
+            block_densities.push((sum, bx, by));
+        }
+    }
+    block_densities.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut set = std::collections::HashSet::new();
+    for i in 0..budget.min(block_densities.len()) {
+        set.insert((block_densities[i].1, block_densities[i].2));
+    }
+    set
 }
 
 // ─── PRNG fallback for solid-color / zero-path images ────────────────────────
@@ -867,7 +957,14 @@ mod stable_seed_tests {
             blocks: None,
         };
 
-        embed(&mut img, &geo, Some("test"), None).unwrap();
+        embed(
+            &mut img,
+            &geo,
+            Some("test"),
+            None,
+            &crate::cli::PlacementStrategy::Skeleton,
+        )
+        .unwrap();
 
         // Recover the seed from self-sync blocks (magic-constant located)
         let sync_blocks = prng_block_list(SEED_MAGIC, w, h, 64 * 8);

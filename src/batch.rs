@@ -64,6 +64,7 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             model_dir: None,
             strength: 0.95,
             key: None,
+            placement: Default::default(),
             #[cfg(feature = "c2pa")]
             c2pa: false,
             #[cfg(feature = "c2pa")]

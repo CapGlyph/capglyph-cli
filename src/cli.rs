@@ -16,6 +16,14 @@ pub enum EmbedMode {
     Learned,
 }
 
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum, Default)]
+pub enum PlacementStrategy {
+    #[default]
+    Skeleton,
+    Prng,
+    Edge,
+}
+
 impl std::fmt::Display for EmbedMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -182,6 +190,13 @@ pub struct EmbedArgs {
     #[arg(long, default_value = "alpha")]
     pub mode: EmbedMode,
 
+    /// Watermark placement strategy for DCT/DWT modes.
+    ///   skeleton — Uses geometric path density (default).
+    ///   prng     — Pseudorandom block scatter (baseline).
+    ///   edge     — High-frequency Sobel edge density (baseline).
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
     /// Watermark stroke width in pixels (controls path density for geometry extraction).
     /// Used in alpha mode only for embed_alpha scaling.
     #[arg(long, default_value_t = 0.010)]
@@ -267,6 +282,9 @@ pub struct VerifyArgs {
     #[arg(long)]
     pub geometry: Option<PathBuf>,
 
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
     /// Alpha nonzero-pixel fraction threshold (alpha mode only, default: 0.0001)
     #[arg(long, default_value_t = 0.0001)]
     pub threshold: f64,
@@ -327,6 +345,9 @@ pub struct InfoArgs {
     /// Optional geometry file for DCT mode (if not provided, re-extracts from image)
     #[arg(long)]
     pub geometry: Option<PathBuf>,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
 }
 
 // ─── batch ───────────────────────────────────────────────────────────────────
@@ -395,6 +416,9 @@ pub struct ExtractArgs {
     /// Optional geometry file (speeds up extraction; auto-extracted if omitted)
     #[arg(short, long)]
     pub geometry: Option<PathBuf>,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
 
     /// Expected recipient ID length in characters (for bit extraction)
     #[arg(short = 'l', long, default_value_t = 16)]
