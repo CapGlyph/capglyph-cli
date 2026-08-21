@@ -50,6 +50,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
     EmbedArgs {
         input,
         output: Some(output),
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         stroke: 0.010,
         detail: 60,
@@ -101,6 +102,7 @@ fn verify_present_after_embed() {
 
     let present = verify::run(&VerifyArgs {
         input: output,
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         geometry: None,
         threshold: 0.0001,
@@ -124,6 +126,7 @@ fn verify_absent_for_plain_rgb() {
 
     let present = verify::run(&VerifyArgs {
         input,
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         geometry: None,
         threshold: 0.0001,
@@ -164,6 +167,7 @@ fn verify_absent_after_strip() {
 
     let present = verify::run(&VerifyArgs {
         input: stripped,
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         geometry: None,
         threshold: 0.0001,
@@ -202,6 +206,7 @@ fn from_geometry_matches_full_run() {
         input: input.clone(),
         output: Some(out2.clone()),
         from_geometry: Some(geo_path),
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         // analysis flags ignored when from_geometry is set
         detail: 60,
@@ -346,6 +351,7 @@ fn dct_watermark_survives_jpeg_q75() {
     // Verify watermark still present after JPEG
     let verify_args = VerifyArgs {
         input: reloaded,
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         geometry: Some(geometry),
         threshold: 0.80,
@@ -391,6 +397,7 @@ fn dct_watermark_degrades_at_jpeg_q50() {
     // because small synthetic images (~28 blocks) don't survive q50 reliably.
     let _result = verify::run(&VerifyArgs {
         input: reloaded,
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         geometry: Some(geometry),
         threshold: 0.80,
@@ -430,6 +437,7 @@ fn alpha_watermark_destroyed_by_jpeg() {
     // Verify watermark is destroyed (no alpha channel)
     let verify_args = VerifyArgs {
         input: reloaded,
+        placement: Default::default(),
         mode: EmbedMode::Alpha,
         geometry: None,
         threshold: 0.0001,
@@ -455,6 +463,7 @@ fn dct_preserves_alpha_channel() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         stroke: 0.010,
         detail: 5,
@@ -502,6 +511,7 @@ fn dct_preserves_alpha_channel() {
     // Verify watermark still works
     let verify_args = VerifyArgs {
         input: output,
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         geometry: None,
         threshold: 0.0001,
@@ -570,6 +580,7 @@ fn dwt_watermark_embed_and_verify() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         stroke: 0.010,
         detail: 60,
@@ -593,6 +604,7 @@ fn dwt_watermark_embed_and_verify() {
 
     let verify_args = VerifyArgs {
         input: output,
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         geometry: None,
         threshold: 0.5,
@@ -637,6 +649,7 @@ fn dwt_watermark_survives_jpeg_q75() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output_png.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         stroke: 0.010,
         detail: 60,
@@ -669,6 +682,7 @@ fn dwt_watermark_survives_jpeg_q75() {
 
     let verify_args = VerifyArgs {
         input: reloaded,
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         geometry: None,
         threshold: 0.2,
@@ -713,6 +727,7 @@ fn dwt_watermark_survives_scale() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         stroke: 0.010,
         detail: 60,
@@ -746,6 +761,7 @@ fn dwt_watermark_survives_scale() {
 
     let verify_args = VerifyArgs {
         input: scaled,
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         geometry: None,
         threshold: 0.3,
@@ -788,6 +804,7 @@ fn recipient_id_roundtrip() {
     let embed_args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         stroke: 0.010,
         detail: 60,
@@ -812,6 +829,7 @@ fn recipient_id_roundtrip() {
     // Extract recipient ID
     let extract_args = ExtractArgs {
         input: output,
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         geometry: Some(geo_path),
         id_length: 13,
@@ -839,6 +857,7 @@ fn secret_layer_key_roundtrip() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         stroke: 0.010,
         detail: 60,
@@ -863,6 +882,7 @@ fn secret_layer_key_roundtrip() {
     // Correct key → secret layer present
     let verify_args = VerifyArgs {
         input: output.clone(),
+        placement: Default::default(),
         mode: EmbedMode::Dwt,
         geometry: None,
         threshold: 0.0001,
@@ -908,6 +928,7 @@ fn secret_layer_dct_roundtrip() {
     let args = EmbedArgs {
         input: input.clone(),
         output: Some(output.clone()),
+        placement: Default::default(),
         mode: EmbedMode::Dct,
         stroke: 0.010,
         detail: 60,

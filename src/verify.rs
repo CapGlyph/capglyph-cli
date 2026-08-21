@@ -206,20 +206,35 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
             }
         }
 
-        if path_pixels.is_empty() {
-            // Solid-color image: use PRNG with image hash as seed
-            let seed = crate::dct::image_seed(&rgb);
-            crate::dct::prng_blocks_from_seed(seed, iw, ih)
-        } else {
-            let mut set = HashSet::new();
-            for (px, py) in &path_pixels {
-                let bx = px / 8;
-                let by = py / 8;
-                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                    set.insert((bx, by));
+        let mut skeleton_blocks = HashSet::new();
+        for (px, py) in &path_pixels {
+            let bx = px / 8;
+            let by = py / 8;
+            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                skeleton_blocks.insert((bx, by));
+            }
+        }
+        let target_budget = skeleton_blocks.len().max(32);
+
+        match args.placement {
+            crate::cli::PlacementStrategy::Prng => crate::dct::prng_blocks_with_budget(
+                &rgb,
+                iw,
+                ih,
+                args.recipient_id.as_deref(),
+                target_budget,
+            ),
+            crate::cli::PlacementStrategy::Edge => {
+                crate::dct::edge_blocks(&rgb, iw, ih, target_budget)
+            }
+            crate::cli::PlacementStrategy::Skeleton => {
+                if skeleton_blocks.is_empty() {
+                    let seed = crate::dct::image_seed(&rgb);
+                    crate::dct::prng_blocks_from_seed(seed, iw, ih)
+                } else {
+                    skeleton_blocks
                 }
             }
-            set
         }
     };
 

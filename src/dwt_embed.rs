@@ -77,6 +77,7 @@ pub fn embed(
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
     secret_key: Option<&str>,
+    _placement: &crate::cli::PlacementStrategy,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
     let (w, h) = img.dimensions();
 
@@ -461,7 +462,14 @@ mod tests {
         let original = img.clone();
         let geo = make_test_geometry(w, h);
 
-        let (n, _positions) = embed(&mut img, &geo, None, None).unwrap();
+        let (n, _positions) = embed(
+            &mut img,
+            &geo,
+            None,
+            None,
+            &crate::cli::PlacementStrategy::Skeleton,
+        )
+        .unwrap();
         assert!(n > 0, "Expected some coefficients to be modified");
 
         // Image should be visually similar but not identical
@@ -533,7 +541,14 @@ mod tests {
         let bits_needed = rid.len() * 8 * crate::spread_spectrum::REDUNDANCY;
 
         // Embed with recipient ID
-        let (n, _positions) = embed(&mut img, &geo, Some(rid), None).unwrap();
+        let (n, _positions) = embed(
+            &mut img,
+            &geo,
+            Some(rid),
+            None,
+            &crate::cli::PlacementStrategy::Skeleton,
+        )
+        .unwrap();
         assert!(n > 0, "No coefficients modified");
 
         // Geometry-free extraction: self-sync seed → PRNG ID positions → decode

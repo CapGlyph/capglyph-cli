@@ -73,6 +73,7 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
                 args.stroke,
                 args.recipient_id.as_deref(),
                 args.key.as_deref(),
+                &args.placement,
             )?;
 
             // Persist block/position coordinates to the geometry file when a
@@ -230,6 +231,7 @@ pub(crate) fn embed_to_image(
     stroke: f32,
     recipient_id: Option<&str>,
     key: Option<&str>,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<EmbedOutput> {
     let (orig_w, orig_h) = (img.width(), img.height());
 
@@ -247,15 +249,13 @@ pub(crate) fn embed_to_image(
                 None
             };
             let mut rgb = img.to_rgb8();
-            let (n_blocks, blocks) = crate::dct::embed(&mut rgb, geometry, recipient_id, key)?;
+            let (count, blocks) =
+                crate::dct::embed(&mut rgb, geometry, recipient_id, key, placement)?;
             let rgba = match orig_alpha {
                 Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
                 None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
             };
-            Ok((
-                image::DynamicImage::ImageRgba8(rgba),
-                Some((n_blocks, blocks)),
-            ))
+            Ok((image::DynamicImage::ImageRgba8(rgba), Some((count, blocks))))
         }
         EmbedMode::Dwt => {
             let orig_alpha: Option<Vec<u8>> = if img.color().has_alpha() {
@@ -265,7 +265,7 @@ pub(crate) fn embed_to_image(
             };
             let mut rgb = img.to_rgb8();
             let (n_coeffs, dwt_positions) =
-                crate::dwt_embed::embed(&mut rgb, geometry, recipient_id, key)?;
+                crate::dwt_embed::embed(&mut rgb, geometry, recipient_id, key, placement)?;
             let rgba = match orig_alpha {
                 Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
                 None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
@@ -307,6 +307,7 @@ pub fn extract_and_build_geometry(
         input: std::path::PathBuf::from("dummy.png"),
         output: None,
         mode: crate::cli::EmbedMode::Dct,
+        placement: Default::default(),
         stroke: 0.010,
         detail: params.detail,
         min_path_len: params.min_path_len,
