@@ -304,6 +304,7 @@ fn signal_metrics_full_for_opaque_rgba() {
 
     // All red, fully opaque — no semi-transparent pixels → watermark absent
     let mut pixels = vec![0u8; 64 * 64 * 4];
+    #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
     for chunk in pixels.chunks_exact_mut(4) {
         chunk[0] = 255; // R
         chunk[1] = 0; // G
