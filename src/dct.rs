@@ -331,7 +331,7 @@ impl DctSignalMetrics {
 pub fn verify(
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
-    placement: &crate::cli::PlacementStrategy,
+    _placement: &crate::cli::PlacementStrategy,
 ) -> Result<DctSignalMetrics> {
     let (iw, ih) = img.dimensions();
 
@@ -616,8 +616,8 @@ pub fn edge_blocks(
     block_densities.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut set = std::collections::HashSet::new();
-    for i in 0..budget.min(block_densities.len()) {
-        set.insert((block_densities[i].1, block_densities[i].2));
+    for item in block_densities.iter().take(budget) {
+        set.insert((item.1, item.2));
     }
     set
 }
