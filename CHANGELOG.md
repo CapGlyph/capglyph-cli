@@ -5,15 +5,45 @@ All notable changes to CapGlyph (formerly Sigil) are documented here. The format
 
 ## [Unreleased]
 
-### Changed
+## [0.1.0] - 2026-08-31 — Initial CapGlyph release (formerly Sigil v0.2.0)
 
-- Docs rename Sigil → CapGlyph (CTX-0039): `README.md`, `README.zh-CN.md`, `docs/mvp-spec.md`, `docs/product-roadmap.md`, `docs/roadmap.md`, `docs/sigil-core-api.md` → `docs/capglyph-core-api.md`, `.github/workflows/*`, `nfpm.yaml` — URLs updated to `https://github.com/CapGlyph/capglyph-cli` (legacy Sigil location now redirects), binary `sigil` → `capglyph` (alias `sigil` retained), env `SIGIL_*` → `CAPGLYPH_*` (fallback `SIGIL_*` retained), brew `xuepoo/tap` → `CapGlyph/tap`, scoop `Xuepoo/scoop-bucket` → `CapGlyph/scoop-bucket`, `com.sigil.watermark` → `com.capglyph.watermark` (legacy still read).
+> **Note:** CapGlyph starts at **0.1.0** for a fresh org. This is an intentional
+> semver _downgrade_ from Sigil `0.2.0`; the codebase is Sigil `0.2.0` renamed.
+> Users migrating from `sigil v0.2.0` should treat `capglyph v0.1.0` as the
+> successor (no data-format break; `sigil` binary/env/assertion aliases retained).
 
 ### Added
 
-- CapGlyph org repos (CTX-0036): created `CapGlyph/capglyph-core`, `CapGlyph/capglyph-spec`, `CapGlyph/capglyph-test-vectors` (public) — verified via `gh repo list`/`gh repo view`; org now has 5 repos (`capglyph-cli` public, `capglyph-docs` private, plus 3 new). See `docs/capglyph-org-repos.md`.
+- Extracted `capglyph-core` crate (`crates/capglyph-core v0.1.0`, formerly `sigil-core v0.2.0`):
+  pure codec primitives (signal/keying/spread_spectrum/geometry/framing/ecc/
+  interleave/registration + `Carrier` trait + `Placement`) shared with future
+  `capglyph-wasm` and `capglyphd`; `capglyph` re-exports via `pub use capglyph_core::*`
+  (compat alias `sigil_core` retained).
+- Isolated workspace layout (`capglyph-cli` + `vectomancy` siblings; path deps
+  `vectomancy-raster`/`vectomancy-geometry`, no `vectomancy` facade; see `docs/capglyph-core-api.md`).
+- WASM gating: `clap`/`glob`/`tracing-subscriber` under `cfg(not(wasm32))`
+  (`cargo tree --target wasm32-unknown-unknown` clean), `image` codecs gated to
+  `png/jpeg` (CTX-0031), `wasm_api.rs` in-memory API (CTX-0007..0012).
+- Org repos `CapGlyph/capglyph-core`, `CapGlyph/capglyph-spec`,
+  `CapGlyph/capglyph-test-vectors` (public) — see `docs/capglyph-org-repos.md` (CTX-0036).
+- Docs rename Sigil → CapGlyph (CTX-0039): `README.md`, `README.zh-CN.md`,
+  `docs/mvp-spec.md`, `docs/product-roadmap.md`, `docs/roadmap.md`,
+  `docs/sigil-core-api.md` → `docs/capglyph-core-api.md`, `.github/workflows/*`,
+  `nfpm.yaml` — URLs `https://github.com/CapGlyph/capglyph-cli`, binary `sigil`
+  → `capglyph` (alias `sigil` retained), env `SIGIL_*` → `CAPGLYPH_*`
+  (fallback `SIGIL_*` retained), `com.sigil.watermark` → `com.capglyph.watermark`.
 
-## [0.2.0] - 2026-08-16
+### Changed
+
+- Version reset `0.2.0` → `0.1.0` for both `capglyph` and `capglyph-core`
+  (new-org fresh start; formerly `sigil v0.2.0`).
+
+### Inherited from Sigil v0.2.0 / v0.1.0
+
+The functional changes below were shipped under Sigil version numbers and are
+carried forward unchanged in `capglyph v0.1.0`:
+
+## [0.2.0] - 2026-08-16 (Sigil, now capglyph v0.1.0)
 
 ### Added
 
@@ -38,7 +68,7 @@ All notable changes to CapGlyph (formerly Sigil) are documented here. The format
   smaller than 512 blocks). The count is now capped; small images degrade
   gracefully instead of hanging.
 
-## [0.1.0] - 2026-08-15
+## [0.1.0] - 2026-08-15 (Sigil, now capglyph v0.1.0)
 
 ### Added
 

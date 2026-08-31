@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "capglyph"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "c2pa",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "capglyph-core"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "ciborium",

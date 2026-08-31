@@ -10,7 +10,7 @@ This file is the **capglyph-repo-local sketch** of the shared `capglyph-core` bo
 The normative spec lives in `capglyph-docs` (formerly `sigil-docs`); this file exists so `cargo test` reviewers
 and CI can verify the migration plan without crossing repos.
 
-## Workspace after CTX-0022 (v0.2.0)
+## Workspace after CTX-0022 (v0.1.0, formerly v0.2.0 Sigil; reset 2026-08-31 CTX-0044)
 
 ```
 capglyph-cli/
@@ -71,13 +71,13 @@ pub trait Register { fn align(&self, original: &ImageBuffer<Rgb<u8>, Vec<u8>>, s
 
 ## Migration checklist (CTX-0022, no facade duplication) — DONE
 
-- [x] Create `crates/capglyph-core/Cargo.toml` (`v0.2.0`, no `clap`/`glob`/`tracing-subscriber`/`c2pa`/`trustmark`, deps: `image` png/jpeg, `ciborium`, `serde_bytes`, `sha2`, `hmac`, `tracing`) (formerly `crates/sigil-core`)
+- [x] Create `crates/capglyph-core/Cargo.toml` (`v0.1.0`, formerly `v0.2.0` Sigil, no `clap`/`glob`/`tracing-subscriber`/`c2pa`/`trustmark`, deps: `image` png/jpeg, `ciborium`, `serde_bytes`, `sha2`, `hmac`, `tracing`) (formerly `crates/sigil-core`)
 - [x] Move `signal`/`keying`/`spread_spectrum`/`geometry`/`framing`/`ecc`/`interleave`/`registration`/`carrier` (trait+`Placement`+`AlphaCarrier`) verbatim into `crates/capglyph-core/src/` (formerly `crates/sigil-core`, `git mv` semantics, `cargo fmt` preserved)
 - [x] `carrier` split: `capglyph_core::carrier::Carrier` (alias `sigil_core`) + `capglyph_core::placement::Placement` live in core; `capglyph/src/carrier.rs` (legacy `sigil/src/carrier.rs`) keeps `DctCarrier`/`DwtCarrier` impls as facade with `to_cli_placement`/`to_core_placement` bridge (no duplication of trait)
 - [x] In `capglyph/Cargo.toml` (legacy `sigil/Cargo.toml`): add `[workspace] members = ["crates/capglyph-core"]`, `capglyph-core = { path = "crates/capglyph-core" }` (alias `sigil-core` retained via `capglyph_core`), `clap`/`glob` already gated via `cfg(not(wasm32))` (CTX-0030); kept `ciborium` etc for `capglyph`'s `dct`/`dwt` until they move
 - [x] In `capglyph/src/lib.rs` (legacy `sigil/src/lib.rs`): replace `pub mod signal;` etc with `pub use capglyph_core::signal;` (alias `sigil_core` retained) — deleted moved files (`src/{signal,keying,spread_spectrum,geometry,framing,ecc,interleave,registration}.rs`), kept `src/core.rs` as thin `pub use capglyph_core::*` re-export and `src/carrier.rs` as `Carrier` impl facade
 - [ ] Move `capglyph/src/wasm_api.rs` (legacy `sigil/src/wasm_api.rs`) → `capglyph-wasm/src/lib.rs` (formerly `sigil-wasm`) — deferred to CTX-0023+ (wasm_api stays in `capglyph` and re-uses `capglyph_core::signal` via `crate::signal`)
-- [x] Version: `capglyph-core v0.2.0` (formerly `sigil-core v0.2.0`) pinned, `capglyph v0.2.0` (formerly `sigil`) depends via path; semver bump to `0.3.0` deferred until `dct`/`dwt` move
+- [x] Version: `capglyph-core v0.1.0` (formerly `sigil-core v0.2.0` → reset 2026-08-31 CTX-0044) pinned, `capglyph v0.1.0` (formerly `sigil v0.2.0`) depends via path; semver bump to `0.2.0` deferred until `dct`/`dwt` move
 - [x] CI gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo check --workspace --target wasm32-unknown-unknown`, `cargo tree --target wasm32-unknown-unknown -p capglyph-core` (legacy `-p sigil-core`) clean (85 nodes, no `clap`/`glob`/`tracing-subscriber`), `cargo tree -p capglyph --target wasm32` (legacy `-p sigil`) clean (195 nodes, `clap`/`glob` gated)
 
 ## Verification gates
