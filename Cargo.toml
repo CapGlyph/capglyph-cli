@@ -9,10 +9,6 @@ keywords = ["watermark", "forensics", "image", "security", "tracing"]
 categories = ["command-line-utilities", "multimedia::images"]
 readme = "README.md"
 
-[workspace]
-members = ["crates/capglyph-core"]
-resolver = "2"
-
 [lib]
 name = "capglyph"
 path = "src/lib.rs"
@@ -22,7 +18,13 @@ name = "capglyph"
 path = "src/main.rs"
 
 [dependencies]
-capglyph-core = { path = "crates/capglyph-core" }
+# capglyph-core is now a standalone repo (CTX-0040). Isolated monorepo layout
+# keeps it at ../capglyph-core sibling (local: /capglyph/capglyph-core).
+# CI checks out CapGlyph/capglyph-core alongside capglyph-cli and vectomancy
+# so this sibling path resolves. Future crates.io publish will switch to
+# `capglyph-core = "0.1"` version dep + `capglyph-core = { path = "../capglyph-core" }`
+# dev override via [patch.crates-io] if needed.
+capglyph-core = { path = "../capglyph-core" }
 
 # Image I/O
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

@@ -1,25 +1,42 @@
 # capglyph-core Extraction API — Crate Boundary Sketch
 
-**Date:** 2026-08-31 (updated 2026-08-31 CTX-0022, renamed 2026-08-31 CTX-0039 Sigil → CapGlyph)
-**Task:** CTX-0019 → CTX-0022
+**Date:** 2026-08-31 (updated 2026-08-31 CTX-0022 → CTX-0040, renamed 2026-08-31 CTX-0039 Sigil → CapGlyph)
+**Task:** CTX-0019 → CTX-0022 → CTX-0040
 **Full spec:** [`capglyph-docs/research/media-credential/capglyph-core-api.md`](../../capglyph-docs/research/media-credential/capglyph-core-api.md)
-**Status:** Implemented (CTX-0022) — `crates/capglyph-core` extracted (formerly `crates/sigil-core`), `capglyph` re-exports, no facade duplication
+**Status:** CTX-0040 — standalone `CapGlyph/capglyph-core` repo (canonical Rust Core, v0.1.0) extracted from `capglyph-cli/crates/capglyph-core`; `capglyph-cli` now depends via `path = "../capglyph-core"` (isolated monorepo)
 **Issue:** [#13](https://github.com/CapGlyph/capglyph-cli/issues/13) (originally legacy Sigil repo #13, now CapGlyph/capglyph-cli, redirects)
 
 This file is the **capglyph-repo-local sketch** of the shared `capglyph-core` boundary (formerly `sigil-core`).
 The normative spec lives in `capglyph-docs` (formerly `sigil-docs`); this file exists so `cargo test` reviewers
 and CI can verify the migration plan without crossing repos.
 
-## Workspace after CTX-0022 (v0.1.0, formerly v0.2.0 Sigil; reset 2026-08-31 CTX-0044)
+## Workspace after CTX-0040 (v0.1.0, formerly v0.2.0 Sigil; reset 2026-08-31 CTX-0044)
+
+CTX-0022 embedded `crates/capglyph-core` inside `capglyph-cli` as a workspace member. CTX-0040 mechanically extracts it to a standalone canonical repo:
+
+```
+capglyph/
+  capglyph-cli/
+    Cargo.toml            # [dependencies] capglyph-core = { path = "../capglyph-core" }  (CTX-0040, was crates/capglyph-core)
+    src/                  # binary crate (thin CLI wrappers → capglyph_core::Carrier via carrier.rs facade, alias sigil_core)
+    docs/capglyph-core-api.md  # this file (formerly sigil-core-api.md)
+  capglyph-core/          # standalone lib (canonical Rust Core, CapGlyph/capglyph-core, v0.1.0)
+                          # sigil-core-api §3.3 feature gates, no clap/glob/c2pa/trustmark
+                          # signal/keying/spread_spectrum/geometry/framing/ecc/interleave/registration + carrier trait + Placement
+                          # (formerly crates/sigil-core → crates/capglyph-core)
+    Cargo.toml
+    src/{carrier,ecc,framing,geometry,interleave,keying,placement,registration,signal,spread_spectrum}.rs
+    .github/workflows/ci.yml  # standalone ci: fmt/clippy/test + wasm-check (no vectomancy)
+  capglyph-wasm/ # thin wasm bridge: capglyph-core wasm-safe subset (no secrets) — deferred to CTX-0023+ (formerly sigil-wasm)
+  vectomancy -> /vectomancy/vectomancy  # symlink for raster/geometry path deps (capglyph-cli only)
+```
+
+Before CTX-0040:
 
 ```
 capglyph-cli/
-  Cargo.toml              # [workspace] members = ["crates/capglyph-core"]
-  crates/capglyph-core/   # new lib: signal/keying/spread_spectrum/geometry/framing/ecc/interleave/registration + carrier trait + Placement
-                          # (formerly crates/sigil-core)
-  src/                    # binary crate (thin CLI wrappers → capglyph_core::Carrier via carrier.rs facade, alias sigil_core)
-  docs/capglyph-core-api.md  # this file (formerly sigil-core-api.md)
-capglyph-wasm/ # thin wasm bridge: capglyph-core wasm-safe subset (no secrets) — deferred to CTX-0023+ (formerly sigil-wasm)
+  Cargo.toml              # [workspace] members = ["crates/capglyph-core"]   (CTX-0022)
+  crates/capglyph-core/   # embedded lib (deleted in CTX-0040, now standalone at ../capglyph-core)
 ```
 
 ## What moves to capglyph-core (formerly sigil-core)
@@ -71,6 +88,10 @@ pub trait Register { fn align(&self, original: &ImageBuffer<Rgb<u8>, Vec<u8>>, s
 
 ## Migration checklist (CTX-0022, no facade duplication) — DONE
 
+## Extraction to standalone repo (CTX-0040) — DONE
+
+CTX-0022:
+
 - [x] Create `crates/capglyph-core/Cargo.toml` (`v0.1.0`, formerly `v0.2.0` Sigil, no `clap`/`glob`/`tracing-subscriber`/`c2pa`/`trustmark`, deps: `image` png/jpeg, `ciborium`, `serde_bytes`, `sha2`, `hmac`, `tracing`) (formerly `crates/sigil-core`)
 - [x] Move `signal`/`keying`/`spread_spectrum`/`geometry`/`framing`/`ecc`/`interleave`/`registration`/`carrier` (trait+`Placement`+`AlphaCarrier`) verbatim into `crates/capglyph-core/src/` (formerly `crates/sigil-core`, `git mv` semantics, `cargo fmt` preserved)
 - [x] `carrier` split: `capglyph_core::carrier::Carrier` (alias `sigil_core`) + `capglyph_core::placement::Placement` live in core; `capglyph/src/carrier.rs` (legacy `sigil/src/carrier.rs`) keeps `DctCarrier`/`DwtCarrier` impls as facade with `to_cli_placement`/`to_core_placement` bridge (no duplication of trait)
@@ -79,6 +100,16 @@ pub trait Register { fn align(&self, original: &ImageBuffer<Rgb<u8>, Vec<u8>>, s
 - [ ] Move `capglyph/src/wasm_api.rs` (legacy `sigil/src/wasm_api.rs`) → `capglyph-wasm/src/lib.rs` (formerly `sigil-wasm`) — deferred to CTX-0023+ (wasm_api stays in `capglyph` and re-uses `capglyph_core::signal` via `crate::signal`)
 - [x] Version: `capglyph-core v0.1.0` (formerly `sigil-core v0.2.0` → reset 2026-08-31 CTX-0044) pinned, `capglyph v0.1.0` (formerly `sigil v0.2.0`) depends via path; semver bump to `0.2.0` deferred until `dct`/`dwt` move
 - [x] CI gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo check --workspace --target wasm32-unknown-unknown`, `cargo tree --target wasm32-unknown-unknown -p capglyph-core` (legacy `-p sigil-core`) clean (85 nodes, no `clap`/`glob`/`tracing-subscriber`), `cargo tree -p capglyph --target wasm32` (legacy `-p sigil`) clean (195 nodes, `clap`/`glob` gated)
+
+CTX-0040 (standalone canonical Rust Core):
+
+- [x] Copy `capglyph-cli/crates/capglyph-core` (v0.1.0) → `CapGlyph/capglyph-core` repo as primary crate (`Cargo.toml` + `src/*.rs`), keep `v0.1.0` unchanged, no `clap`/`glob`/`c2pa`/`trustmark`
+- [x] Populate `capglyph-core` repo: `Cargo.toml`, `src/*.rs` (identical to embedded), `LICENSE` (Apache-2.0), `README.md` (canonical-core docs + isolated monorepo path), `.gitignore`, `.github/workflows/ci.yml` (standalone fmt/clippy/test + wasm-check, no vectomancy sibling needed)
+- [x] Update `capglyph-cli/Cargo.toml`: remove `[workspace] members = ["crates/capglyph-core"]`, change `capglyph-core = { path = "crates/capglyph-core" }` → `path = "../capglyph-core"` (isolated layout `../capglyph-core` sibling, same as `../vectomancy`; CI will checkout `CapGlyph/capglyph-core` at `capglyph-core` sibling)
+- [x] Delete `capglyph-cli/crates/capglyph-core` directory (mechanical extraction, no duplicate) — `git rm -r crates/capglyph-core`
+- [x] Update `capglyph-cli/.github/workflows/ci.yml` + `release.yml`: add `CapGlyph/capglyph-core` checkout at `capglyph-core` sibling, include `capglyph-core/Cargo.lock` in cache keys, update `prepare()` in AUR PKGBUILD to symlink `capglyph-core` sibling
+- [x] Verify: `cargo test` in both repos, `cargo check --lib --target wasm32-unknown-unknown` in both, `cargo tree --target wasm32-unknown-unknown` clean (no `clap`/`glob`/`trustmark`/`c2pa` in either)
+- [x] Dependency decision (documented in this file + `capglyph-core/README.md` + `capglyph-cli/Cargo.toml` comment): local dev uses `path = "../capglyph-core"` (isolated monorepo sibling); CI checks out sibling; crates.io publish will switch to `capglyph-core = "0.1"` version dep + `[patch.crates-io]` dev override or git dep `CapGlyph/capglyph-core` tag fallback — not yet published, so path dep remains canonical for now
 
 ## Verification gates
 
