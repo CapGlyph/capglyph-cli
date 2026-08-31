@@ -115,11 +115,11 @@ impl Carrier for DctCarrier {
     }
 
     fn metrics_is_present(metrics: &Self::Metrics, threshold: f64) -> bool {
-        metrics.is_present(threshold as f32)
+        metrics.is_present(threshold)
     }
 
     fn metrics_mean_signal(metrics: &Self::Metrics) -> f64 {
-        f64::from(metrics.signal_strength)
+        metrics.mean_signal_value()
     }
 }
 
@@ -178,14 +178,11 @@ impl Carrier for DwtCarrier {
     }
 
     fn metrics_is_present(metrics: &Self::Metrics, threshold: f64) -> bool {
-        // Mirrors wasm_api/verify logic: mean_signal dominates, detection_rate
-        // is a secondary gate for noisy images.
-        let mean = f64::from(metrics.mean_signal);
-        mean >= threshold || (metrics.detection_rate >= 0.8 && mean >= 2.0)
+        metrics.is_present(threshold)
     }
 
     fn metrics_mean_signal(metrics: &Self::Metrics) -> f64 {
-        f64::from(metrics.mean_signal)
+        metrics.mean_signal_value()
     }
 }
 

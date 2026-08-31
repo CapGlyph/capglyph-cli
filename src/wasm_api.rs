@@ -96,8 +96,7 @@ pub fn verify_bytes(src: &[u8], mode: &str) -> Result<bool> {
                 &geometry,
                 &crate::cli::PlacementStrategy::Skeleton,
             )?;
-            Ok(metrics.mean_signal >= 4.0
-                || (metrics.detection_rate >= 0.8 && metrics.mean_signal >= 2.0))
+            Ok(metrics.is_present(4.0))
         }
         EmbedMode::Learned => {
             anyhow::bail!("learned mode is not supported in the byte API (requires ONNX Runtime)")

@@ -654,8 +654,31 @@ pub struct DctSignalMetrics {
 }
 
 impl DctSignalMetrics {
-    pub fn is_present(&self, threshold: f32) -> bool {
-        self.signal_strength >= threshold
+    /// Canonical DCT presence predicate: `signal_strength >= threshold`.
+    ///
+    /// This is the single source of truth for DCT presence — `carrier.rs`,
+    /// `verify.rs`, and `wasm_api.rs` all delegate here (via `is_present` /
+    /// `is_present_at` / `predicate`). `threshold` is `f64` to avoid
+    /// `as f32` truncation drift; the comparison uses `f64::from(signal_strength)`.
+    pub fn is_present(&self, threshold: f64) -> bool {
+        self.is_present_at(threshold)
+    }
+
+    /// Alias for `is_present` (explicit `f64` threshold). Preferred for new code.
+    pub fn is_present_at(&self, threshold: f64) -> bool {
+        Self::predicate(f64::from(self.signal_strength), threshold)
+    }
+
+    /// Canonical predicate for a raw DCT signal value — used by `verify.rs`
+    /// which computes `mean_signal` without constructing a `DctSignalMetrics`.
+    #[inline]
+    pub fn predicate(signal: f64, threshold: f64) -> bool {
+        signal >= threshold
+    }
+
+    /// Mean signal as `f64` for threshold comparisons (mirrors `DwtSignalMetrics::mean_signal_value`).
+    pub fn mean_signal_value(&self) -> f64 {
+        f64::from(self.signal_strength)
     }
 
     pub fn summary(&self) -> String {
