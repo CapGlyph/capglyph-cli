@@ -5,6 +5,10 @@ All notable changes to Sigil are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- CapGlyph org repos (CTX-0036): created `CapGlyph/capglyph-core`, `CapGlyph/capglyph-spec`, `CapGlyph/capglyph-test-vectors` (public) — verified via `gh repo list`/`gh repo view`; org now has 5 repos (`capglyph-cli` public, `capglyph-docs` private, plus 3 new). See `docs/capglyph-org-repos.md`.
+
 ## [0.2.0] - 2026-08-16
 
 ### Added
