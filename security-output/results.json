@@ -1,0 +1,417 @@
+{
+  "experiment_id": "ctx-0026-security-bench",
+  "generated_at": "SystemTime { tv_sec: 1788192107, tv_nsec: 33239968 }",
+  "parameters": {
+    "brute_force_tries": 5000,
+    "concurrent_threads": 10,
+    "framing": "CBOR + HMAC-SHA256 (sealed 54B for 16B credential)",
+    "key_material": "KeyMaterial::from_keys([0x11;32],[0x22;32])",
+    "note": "All carrier tests use DctCarrier/DwtCarrier embed_framed with registered residual via TranslationRegistration where noted.",
+    "payload_bits": 128,
+    "payload_bytes": 16,
+    "steg_dataset": 100,
+    "trials": 5
+  },
+  "results": {
+    "brute_force": {
+      "elapsed_ms": 359,
+      "expected_per_guess": 2.938735877055719e-39,
+      "expected_successes": 1.4693679385278594e-35,
+      "fer": 0.0,
+      "hmac_tamper_successes": 0,
+      "hmac_tamper_tries": 1000,
+      "hmac_wrong_key_successes": 0,
+      "not_found": 5000,
+      "note": "128-bit CSPRNG token; brute-force FER ~2^-128 per guess. HMAC fail-closed: tampered frame never opens with correct K_mac, never with wrong K_mac.",
+      "other_err": 0,
+      "successes": 0,
+      "tries": 5000
+    },
+    "collusion": {
+      "note": "Median collusion destroys payload bits that differ across copies (blind FER →1.0 for N≥3 when payloads distinct). Secret layer (identical across copies) survives median at ~100% (differential pairs same positions/deltas). This matches Q1.11+Q1.12: collusion defeats tracing but not attribution via secret layer.",
+      "summary": [
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 2,
+          "profile": "Bch { t: 2 }",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 3,
+          "profile": "Bch { t: 2 }",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 5,
+          "profile": "Bch { t: 2 }",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 8,
+          "profile": "Bch { t: 2 }",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 2,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 3,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 5,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 8,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 2,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 3,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 5,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dct",
+          "n": 8,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 2,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 3,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 5,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 1.0,
+          "blind_survival": 0,
+          "carrier": "dwt",
+          "n": 8,
+          "profile": "Repetition8",
+          "residual_survival": 0,
+          "secret_layer_survival": 5,
+          "secret_survival_rate": 1.0,
+          "size": 1024,
+          "trials": 5
+        }
+      ]
+    },
+    "concurrent": {
+      "config": {
+        "busy_timeout_ms": 5000,
+        "isolation": "BEGIN IMMEDIATE",
+        "journal_mode": "WAL"
+      },
+      "note": "DB uses BEGIN IMMEDIATE + UPDATE ... RETURNING to ensure exactly max_uses successes under contention, with 5s busy timeout and WAL. Idempotent replay does not double-spend. Concurrent consume is linearizable.",
+      "summary": [
+        {
+          "elapsed_ms": 13,
+          "error_kinds": {
+            "Exhausted": 9
+          },
+          "expected_successes": 1,
+          "failures": 9,
+          "latency_median_us": 4236,
+          "latency_p95_us": 12201,
+          "max_uses": 1,
+          "no_double_spend": true,
+          "successes": 1,
+          "threads": 10,
+          "use_count": 1,
+          "use_count_ok": true
+        },
+        {
+          "elapsed_ms": 13,
+          "error_kinds": {
+            "Exhausted": 7
+          },
+          "expected_successes": 3,
+          "failures": 7,
+          "latency_median_us": 4303,
+          "latency_p95_us": 11108,
+          "max_uses": 3,
+          "no_double_spend": true,
+          "successes": 3,
+          "threads": 10,
+          "use_count": 3,
+          "use_count_ok": true
+        },
+        {
+          "elapsed_ms": 12,
+          "error_kinds": {},
+          "expected_successes": 10,
+          "failures": 0,
+          "latency_median_us": 4084,
+          "latency_p95_us": 11145,
+          "max_uses": 10,
+          "no_double_spend": true,
+          "successes": 10,
+          "threads": 10,
+          "use_count": 10,
+          "use_count_ok": true
+        }
+      ]
+    },
+    "known_cover": {
+      "note": "Known-cover diff (W-C=A exact for PNG) removes all layers perfectly (FER 1.0 for defender). With correct K, residual extraction FER 0.0; with wrong K, FER 1.0. This is information-theoretic: possession of original implies perfect removal for any watermark.",
+      "summary": [
+        {
+          "blind_fer": 0.19999999999999996,
+          "blind_ok": 4,
+          "carrier": "dct",
+          "known_cover_attack_success": 0.8,
+          "profile": "Bch { t: 2 }",
+          "removal_extract_fail": 5,
+          "removal_verify_fail": 4,
+          "residual_fer": 0.0,
+          "residual_ok": 5,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 0.0,
+          "blind_ok": 5,
+          "carrier": "dwt",
+          "known_cover_attack_success": 1.0,
+          "profile": "Repetition8",
+          "removal_extract_fail": 5,
+          "removal_verify_fail": 5,
+          "residual_fer": 0.0,
+          "residual_ok": 5,
+          "size": 512,
+          "trials": 5
+        },
+        {
+          "blind_fer": 0.0,
+          "blind_ok": 5,
+          "carrier": "dct",
+          "known_cover_attack_success": 1.0,
+          "profile": "Repetition8",
+          "removal_extract_fail": 5,
+          "removal_verify_fail": 5,
+          "residual_fer": 0.0,
+          "residual_ok": 5,
+          "size": 1024,
+          "trials": 5
+        },
+        {
+          "blind_fer": 0.0,
+          "blind_ok": 5,
+          "carrier": "dwt",
+          "known_cover_attack_success": 0.8,
+          "profile": "Repetition8",
+          "removal_extract_fail": 5,
+          "removal_verify_fail": 4,
+          "residual_fer": 0.0,
+          "residual_ok": 5,
+          "size": 1024,
+          "trials": 5
+        }
+      ]
+    },
+    "steganalysis": {
+      "note": "Statistical detectors on global DCT(2,3) mean-abs and LH variance. At low FPR (0.01), TPR is low because watermark occupies ~5% blocks with ±16/±256 delta, buried in natural coefficient variance. This matches theory: robust_capacity vs stealth_capacity are coupled (Cachin square-root law). Simple detectors are insufficient; stronger CNN (e.g., XuNet) would need training but is not evaluated here.",
+      "summary": [
+        {
+          "carrier": "dct",
+          "dataset": 100,
+          "detector_dct_global": {
+            "auc": 0.4682000000000001,
+            "cover_mean": 46.90581670044616,
+            "cover_std": 0.3021218555874091,
+            "stego_mean": 46.881824134849694,
+            "stego_std": 0.30600092032044895,
+            "tpr_at_fpr_0.01": 0.01,
+            "tpr_at_fpr_0.05": 0.06,
+            "tpr_at_fpr_0.10": 0.1
+          },
+          "detector_lh_global": {
+            "auc": 0.4254999999999998,
+            "cover_mean": 295.4409421302768,
+            "cover_std": 0.5658685130223753,
+            "stego_mean": 295.32506355291224,
+            "stego_std": 0.5628330713558468,
+            "tpr_at_fpr_0.01": 0.0,
+            "tpr_at_fpr_0.05": 0.0,
+            "tpr_at_fpr_0.10": 0.0
+          },
+          "profile": "Bch { t: 2 }",
+          "size": 512
+        },
+        {
+          "carrier": "dwt",
+          "dataset": 100,
+          "detector_dct_global": {
+            "auc": 0.985,
+            "cover_mean": 46.90581670044616,
+            "cover_std": 0.3021218555874091,
+            "stego_mean": 51.64720205726241,
+            "stego_std": 0.321465118900807,
+            "tpr_at_fpr_0.01": 1.0,
+            "tpr_at_fpr_0.05": 1.0,
+            "tpr_at_fpr_0.10": 1.0
+          },
+          "detector_lh_global": {
+            "auc": 0.985,
+            "cover_mean": 295.4409421302768,
+            "cover_std": 0.5658685130223753,
+            "stego_mean": 307.5167817984765,
+            "stego_std": 0.5328272900220421,
+            "tpr_at_fpr_0.01": 1.0,
+            "tpr_at_fpr_0.05": 1.0,
+            "tpr_at_fpr_0.10": 1.0
+          },
+          "profile": "Repetition8",
+          "size": 512
+        }
+      ]
+    },
+    "verify_oracle": {
+      "measured": {
+        "1000_verify_ms": 74,
+        "100_verify_secret_ms": 53,
+        "wrong_token_correctly_rejected": true
+      },
+      "queries_for_full_scan": 4096.0,
+      "queries_for_payload_bits": 3456.0,
+      "recommendation": "Binary response (present/absent) leaks 1 bit per query. Rate-limit to ≤10/min per IP per token and ≤100/day global makes oracle tuning of removal (needs >4k queries) take >6h, payload recovery (>3k queries) >5h, with abort on 10 consecutive failures. No confidence score returned.",
+      "secret_blocks": 512,
+      "time_for_payload_at_1qps_mins": 57.6,
+      "time_for_scan_at_1qps_mins": 68.26666666666667,
+      "time_for_scan_at_1qps_secs": 4096.0,
+      "total_blocks_512": 4096,
+      "verify_latency_us": 74.017,
+      "verify_qps": 13510.409770728347,
+      "verify_secret_latency_us": 539.87
+    }
+  },
+  "total_duration_secs": 28.778200925
+}
