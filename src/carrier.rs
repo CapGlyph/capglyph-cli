@@ -8,11 +8,12 @@
 //! No behavior change — each impl delegates to the existing `crate::dct`,
 //! `crate::dwt_embed`, and `crate::extract` primitives.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
 
 use crate::cli::PlacementStrategy;
 use crate::geometry::GeometryFile;
+use crate::registration::{CoverVault, HybridMatch, Registration};
 
 /// Unified interface for a watermark carrier (frequency-domain or spatial).
 ///
@@ -286,6 +287,156 @@ impl DctCarrier {
         let mean_abs_llr: f32 = soft.iter().map(|s| s.llr.abs()).sum::<f32>() / soft.len() as f32;
         Ok(mean_abs_llr as f64 >= threshold)
     }
+
+    // ── CTX-0021: original-assisted (registered-residual) extract / verify ─────
+
+    /// Original-assisted extraction: `R = I_aligned − I_original` → matched filter.
+    ///
+    /// `original` is the server-held cover (private). `submitted` is the
+    /// submitted credential image (possibly distorted). `registration` warps
+    /// `submitted` into `original`'s coords before `R` is formed.
+    pub fn extract_framed_registered(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<Vec<u8>> {
+        let aligned = registration
+            .align(original, submitted)
+            .context("registration warp failed")?;
+        Self::extract_framed_registered_aligned(
+            original,
+            &aligned.image,
+            keys,
+            profile,
+            expected_payload_len,
+        )
+    }
+
+    /// Same as `extract_framed_registered` but `aligned` is already warped.
+    pub fn extract_framed_registered_aligned(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        aligned: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<Vec<u8>> {
+        if let Some(len) = expected_payload_len {
+            let params = crate::framing::Params {
+                version: 1,
+                payload_type: crate::framing::PayloadType::Credential,
+                flags: 0,
+            };
+            let sealed_len = crate::framing::sealed_len(len, &params);
+            let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
+            let soft = crate::dct::extract_coded_bits_soft_residual(
+                original,
+                aligned,
+                keys,
+                Some(need_bits),
+            )?;
+            let mut decoded_sealed = crate::ecc::decode(&soft, profile)?;
+            if decoded_sealed.len() > sealed_len {
+                decoded_sealed.truncate(sealed_len);
+            }
+            let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
+            return Ok(payload);
+        }
+        let soft = crate::dct::extract_coded_bits_soft_residual(original, aligned, keys, None)?;
+        let decoded_sealed = crate::ecc::decode(&soft, profile)?;
+        let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
+        Ok(payload)
+    }
+
+    /// Hybrid extractor: blind locator → cover family → strong verify.
+    ///
+    /// `vault` holds candidate originals (cover family). Each candidate is
+    /// tried with `registration` + residual decode. The first candidate whose
+    /// `R`-based decode passes ECC + HMAC is returned as `HybridMatch`.
+    /// This fixes the bootstrap problem of selecting among N covers without a
+    /// file-XOR trick.
+    pub fn extract_framed_hybrid(
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        vault: &CoverVault,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<HybridMatch> {
+        anyhow::ensure!(!vault.is_empty(), "hybrid vault is empty");
+        for (idx, (cover_id, original)) in vault.all().iter().enumerate() {
+            let aligned = match registration.align(original, submitted) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            let res = Self::extract_framed_registered_aligned(
+                original,
+                &aligned.image,
+                keys,
+                profile,
+                expected_payload_len,
+            );
+            if let Ok(payload) = res {
+                return Ok(HybridMatch {
+                    vault_index: idx,
+                    cover_id: cover_id.clone(),
+                    payload,
+                    transform: aligned.transform,
+                });
+            }
+        }
+        anyhow::bail!(
+            "hybrid extraction failed: no vault cover produced a valid payload (tried {})",
+            vault.len()
+        )
+    }
+
+    /// Strong verify via residual: returns true if residual decode succeeds.
+    pub fn verify_framed_registered(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<bool> {
+        let aligned = registration.align(original, submitted)?;
+        let res = Self::extract_framed_registered_aligned(
+            original,
+            &aligned.image,
+            keys,
+            profile,
+            expected_payload_len,
+        );
+        Ok(res.is_ok())
+    }
+
+    /// Unified `extract_framed_with_hint` that now accepts an optional cover.
+    /// If `cover` is `Some`, uses the strong residual path; otherwise the
+    /// blind path. This satisfies the CTX-0021 requirement that the hint
+    /// extractor integrate soft-bits from `R` when a cover is available.
+    pub fn extract_framed_with_hint_and_cover(
+        img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+        cover: Option<&ImageBuffer<Rgb<u8>, Vec<u8>>>,
+        registration: Option<&dyn Registration>,
+    ) -> Result<Vec<u8>> {
+        if let (Some(orig), Some(reg)) = (cover, registration) {
+            return Self::extract_framed_registered(
+                orig,
+                img,
+                reg,
+                keys,
+                profile,
+                expected_payload_len,
+            );
+        }
+        Self::extract_framed_with_hint(img, keys, profile, expected_payload_len)
+    }
 }
 
 impl DwtCarrier {
@@ -359,6 +510,139 @@ impl DwtCarrier {
             }
         }
         try_decode(&soft_all)
+    }
+
+    // ── CTX-0021: original-assisted (registered-residual) for DWT ───────────
+
+    pub fn extract_framed_registered(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<Vec<u8>> {
+        let aligned = registration
+            .align(original, submitted)
+            .context("registration warp failed (dwt)")?;
+        Self::extract_framed_registered_aligned(
+            original,
+            &aligned.image,
+            keys,
+            profile,
+            expected_payload_len,
+        )
+    }
+
+    pub fn extract_framed_registered_aligned(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        aligned: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<Vec<u8>> {
+        if let Some(len) = expected_payload_len {
+            let params = crate::framing::Params {
+                version: 1,
+                payload_type: crate::framing::PayloadType::Credential,
+                flags: 0,
+            };
+            let sealed_len = crate::framing::sealed_len(len, &params);
+            let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
+            let soft = crate::dwt_embed::extract_coded_bits_soft_residual(
+                original,
+                aligned,
+                keys,
+                Some(need_bits),
+            )?;
+            let mut decoded_sealed = crate::ecc::decode(&soft, profile)?;
+            if decoded_sealed.len() > sealed_len {
+                decoded_sealed.truncate(sealed_len);
+            }
+            let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
+            return Ok(payload);
+        }
+        let soft =
+            crate::dwt_embed::extract_coded_bits_soft_residual(original, aligned, keys, None)?;
+        let decoded_sealed = crate::ecc::decode(&soft, profile)?;
+        let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
+        Ok(payload)
+    }
+
+    pub fn extract_framed_hybrid(
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        vault: &CoverVault,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<HybridMatch> {
+        anyhow::ensure!(!vault.is_empty(), "hybrid vault is empty (dwt)");
+        for (idx, (cover_id, original)) in vault.all().iter().enumerate() {
+            let aligned = match registration.align(original, submitted) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            let res = Self::extract_framed_registered_aligned(
+                original,
+                &aligned.image,
+                keys,
+                profile,
+                expected_payload_len,
+            );
+            if let Ok(payload) = res {
+                return Ok(HybridMatch {
+                    vault_index: idx,
+                    cover_id: cover_id.clone(),
+                    payload,
+                    transform: aligned.transform,
+                });
+            }
+        }
+        anyhow::bail!(
+            "hybrid dwt extraction failed: no vault cover produced valid payload (tried {})",
+            vault.len()
+        )
+    }
+
+    pub fn verify_framed_registered(
+        original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        submitted: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        registration: &dyn Registration,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+    ) -> Result<bool> {
+        let aligned = registration.align(original, submitted)?;
+        let res = Self::extract_framed_registered_aligned(
+            original,
+            &aligned.image,
+            keys,
+            profile,
+            expected_payload_len,
+        );
+        Ok(res.is_ok())
+    }
+
+    pub fn extract_framed_with_hint_and_cover(
+        img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+        keys: &crate::keying::KeyMaterial,
+        profile: crate::ecc::Profile,
+        expected_payload_len: Option<usize>,
+        cover: Option<&ImageBuffer<Rgb<u8>, Vec<u8>>>,
+        registration: Option<&dyn Registration>,
+    ) -> Result<Vec<u8>> {
+        if let (Some(orig), Some(reg)) = (cover, registration) {
+            return Self::extract_framed_registered(
+                orig,
+                img,
+                reg,
+                keys,
+                profile,
+                expected_payload_len,
+            );
+        }
+        Self::extract_framed_with_hint(img, keys, profile, expected_payload_len)
     }
 }
 

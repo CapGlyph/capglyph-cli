@@ -549,6 +549,105 @@ pub fn extract_coded_bits_soft_with_hint(
         .collect())
 }
 
+/// CTX-0021: Residual soft extraction `R = I_aligned − I_original` in LH band.
+///
+/// Uses `stable_seed(original)` directly for the strong path.
+pub fn extract_coded_bits_soft_residual(
+    original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    aligned: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+    expected_bits: Option<usize>,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    let (w, h) = original.dimensions();
+    let (aw, ah) = aligned.dimensions();
+    anyhow::ensure!(
+        w == aw && h == ah,
+        "original {}×{} vs aligned {}×{} size mismatch (residual)",
+        w,
+        h,
+        aw,
+        ah
+    );
+    let band_w = w / 2;
+    let band_h = h / 2;
+    let sync_positions = prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_positions.iter().copied().collect();
+
+    let seed = crate::dct::stable_seed(original);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+
+    let (n_bits, cand) = if let Some(exp) = expected_bits {
+        let mut cand = prng_band_positions(kseed, band_w, band_h, exp * 2 + sync_set.len() * 2);
+        cand.retain(|p| !sync_set.contains(p));
+        anyhow::ensure!(
+            cand.len() >= exp * 2,
+            "insufficient keyed band positions for expected bits (residual)"
+        );
+        cand.truncate(exp * 2);
+        cand.sort_unstable();
+        (exp, cand)
+    } else {
+        let total_band = (band_w as usize) * (band_h as usize);
+        let max_pairs = (total_band.saturating_sub(sync_positions.len())) / 2;
+        let mut cand =
+            prng_band_positions(kseed, band_w, band_h, max_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|p| !sync_set.contains(p));
+        cand.truncate(max_pairs * 2);
+        cand.sort_unstable();
+        if !cand.len().is_multiple_of(2) {
+            cand.pop();
+        }
+        (cand.len() / 2, cand)
+    };
+
+    // Compute residual LH bands: Haar(aligned) - Haar(original) per channel, then average
+    let mut residual_bands: Vec<Vec<Vec<f32>>> = Vec::new();
+    for ch in 0..3usize {
+        let orig_mat = extract_channel(original, ch);
+        let aligned_mat = extract_channel(aligned, ch);
+        let orig_decomp = haar_2d_forward(&orig_mat)?;
+        let aligned_decomp = haar_2d_forward(&aligned_mat)?;
+        let orig_band = orig_decomp.band(EMBED_BAND);
+        let aligned_band = aligned_decomp.band(EMBED_BAND);
+        let bh = orig_band.len();
+        let bw = orig_band[0].len();
+        let mut res = vec![vec![0.0f32; bw]; bh];
+        for y in 0..bh {
+            for x in 0..bw {
+                res[y][x] = aligned_band[y][x] - orig_band[y][x];
+            }
+        }
+        residual_bands.push(res);
+    }
+
+    let mut diffs = Vec::with_capacity(n_bits);
+    for i in 0..n_bits {
+        let (bx0, by0) = cand[2 * i];
+        let (bx1, by1) = cand[2 * i + 1];
+        let mut d0 = 0.0f32;
+        let mut d1 = 0.0f32;
+        for band in &residual_bands {
+            let (bh, bw) = (band.len(), band[0].len());
+            let (bx0u, by0u) = (bx0 as usize, by0 as usize);
+            let (bx1u, by1u) = (bx1 as usize, by1 as usize);
+            if bx0u < bw && by0u < bh {
+                d0 += band[by0u][bx0u];
+            }
+            if bx1u < bw && by1u < bh {
+                d1 += band[by1u][bx1u];
+            }
+        }
+        d0 /= 3.0;
+        d1 /= 3.0;
+        diffs.push(d0 - d1);
+    }
+    let sigma = crate::ecc::estimate_sigma(&diffs);
+    Ok(diffs
+        .iter()
+        .map(|&d| crate::ecc::SoftBit::from_coeff(d, sigma))
+        .collect())
+}
+
 // ── Verify ────────────────────────────────────────────────────────────────────
 
 /// Verify DWT watermark presence.

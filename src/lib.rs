@@ -27,3 +27,5 @@ pub mod core;
 pub mod ecc;
 pub mod framing;
 pub mod interleave;
+// ── CTX-0021: registered-residual original-assisted extractor ──
+pub mod registration;
