@@ -1,17 +1,22 @@
 use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use tracing::info;
 
 use crate::carrier::Carrier;
-use crate::cli::{EmbedArgs, EmbedMode};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::cli::EmbedArgs;
+use crate::cli::EmbedMode;
 use crate::core::geometry::{AnalysisParams, GeometryFile, PathEntry};
 
 /// Entry point for the `embed` subcommand.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(args: &EmbedArgs) -> Result<()> {
     embed(args)
 }
 
 /// Core embed logic (also called by batch module).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn embed(args: &EmbedArgs) -> Result<()> {
     // ── 1. Resolve output path ────────────────────────────────────────────────
     let default_ext = if args
@@ -307,46 +312,81 @@ pub struct GeometryParams {
     pub recipient_id: Option<String>,
 }
 
-/// Public wrapper for geometry extraction (used by info command).
+/// Public wrapper for geometry extraction (used by info command and wasm_api).
 pub fn extract_and_build_geometry(
     rgb: &image::RgbImage,
     width: u32,
     height: u32,
     params: &GeometryParams,
 ) -> Result<GeometryFile> {
-    // Convert RgbImage to DynamicImage for extract_geometry
-    let dyn_img = image::DynamicImage::ImageRgb8(rgb.clone());
+    use vectomancy_geometry::{chaikin_smooth_points, simplify_rdp};
+    use vectomancy_raster::decode_raster_memory;
 
-    // Build temporary EmbedArgs
-    let args = EmbedArgs {
-        input: std::path::PathBuf::from("dummy.png"),
-        output: None,
-        mode: crate::cli::EmbedMode::Dct,
-        placement: Default::default(),
-        stroke: 0.010,
-        detail: params.detail,
-        min_path_len: params.min_path_len,
-        chaikin_iters: params.chaikin_iters,
-        color: params.color,
-        save_geometry: None,
-        from_geometry: None,
-        recipient_id: params.recipient_id.clone(),
-        key: None,
-        model_dir: None,
-        strength: 0.95,
-        dwt_strength: crate::dwt_embed::DWT_EMBED_STRENGTH,
-        #[cfg(feature = "c2pa")]
-        c2pa: false,
-        #[cfg(feature = "c2pa")]
-        c2pa_cert: None,
-        #[cfg(feature = "c2pa")]
-        c2pa_pkey: None,
+    let tolerance = {
+        let d = params.detail.clamp(1, 100) as f64;
+        5.0 * (1.0 - d / 100.0).powi(2) + 0.1
     };
 
-    extract_geometry(&dyn_img, width, height, &args)
+    let dyn_img = image::DynamicImage::ImageRgb8(rgb.clone());
+    let bytes = {
+        let mut buf = Vec::new();
+        dyn_img
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .context("Failed to encode image for raster pipeline")?;
+        buf
+    };
+
+    let (raw_paths, _dims) = decode_raster_memory(&bytes, params.color)
+        .map_err(|e| anyhow::anyhow!("Raster decode failed: {}", e))?;
+
+    let mut paths: Vec<PathEntry> = Vec::new();
+    for sp in raw_paths {
+        if sp.geometry.points.len() < params.min_path_len {
+            continue;
+        }
+        let simplified = simplify_rdp(&sp.geometry.points, tolerance);
+        if simplified.len() < 2 {
+            continue;
+        }
+        let smoothed = if params.chaikin_iters > 0 {
+            chaikin_smooth_points(&simplified, params.chaikin_iters, false)
+        } else {
+            simplified
+        };
+
+        let color = sp.color_style.as_deref().and_then(parse_hex_color);
+        paths.push(PathEntry {
+            color,
+            points: smoothed.iter().map(|p| [p.x, p.y]).collect(),
+        });
+    }
+
+    info!("Extracted {} paths from image", paths.len());
+
+    let prng_seed = if paths.is_empty() {
+        Some(crate::dct::image_seed(rgb))
+    } else {
+        None
+    };
+
+    Ok(GeometryFile {
+        version: GeometryFile::CURRENT_VERSION,
+        original_width: width,
+        original_height: height,
+        analysis_params: AnalysisParams {
+            detail: params.detail,
+            min_path_len: params.min_path_len,
+            chaikin_iters: params.chaikin_iters,
+            color: params.color,
+        },
+        paths,
+        prng_seed,
+        blocks: None,
+    })
 }
 
-/// Run the vectomancy-raster pipeline and apply Chaikin smoothing.
+/// Run the vectomancy-raster pipeline and apply Chaikin smoothing (CLI only).
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_geometry(
     src: &image::DynamicImage,
     width: u32,
@@ -564,6 +604,7 @@ fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
 }
 
 /// Build a default output path: `<parent>/<stem><suffix>.<ext>`
+#[cfg(not(target_arch = "wasm32"))]
 pub fn resolve_output(input: &Path, override_: Option<&Path>, suffix: &str, ext: &str) -> PathBuf {
     if let Some(p) = override_ {
         return p.to_path_buf();
@@ -583,6 +624,7 @@ fn merge_rgb_alpha(rgb: &image::RgbImage, alphas: &[u8], w: u32, h: u32) -> imag
 }
 
 /// Composite RGB + alpha over a white background → flat RGB (for JPEG output).
+#[cfg(not(target_arch = "wasm32"))]
 fn composite_rgb_over_white(
     rgb: &image::RgbImage,
     alphas: &[u8],
@@ -600,6 +642,7 @@ fn composite_rgb_over_white(
 }
 
 /// Save an RGB image as JPEG with the given quality (10–100).
+#[cfg(not(target_arch = "wasm32"))]
 fn save_as_jpeg(rgb: &image::RgbImage, path: &Path, quality: u8) -> Result<()> {
     let mut file = std::fs::File::create(path)
         .with_context(|| format!("Failed to create JPEG output: {:?}", path))?;

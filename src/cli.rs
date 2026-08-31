@@ -1,8 +1,11 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+#[cfg(not(target_arch = "wasm32"))]
+use clap::{Args, Parser, Subcommand};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
 /// Embedding mode for `sigil embed`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum EmbedMode {
     /// Stage 1: sparse alpha-channel signal. Fast, invisible. Fragile to alpha stripping.
     Alpha,
@@ -16,7 +19,8 @@ pub enum EmbedMode {
     Learned,
 }
 
-#[derive(Clone, Debug, PartialEq, clap::ValueEnum, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum PlacementStrategy {
     #[default]
     Skeleton,
@@ -24,7 +28,8 @@ pub enum PlacementStrategy {
     Edge,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum ProtocolVersion {
     V1,
     V2,
@@ -41,6 +46,7 @@ impl std::fmt::Display for EmbedMode {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser, Debug)]
 #[command(
     name = "sigil",
@@ -60,6 +66,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Embed an invisible structural watermark into an image
@@ -82,7 +89,7 @@ pub enum Commands {
     C2pa(C2paArgs),
 }
 
-#[cfg(feature = "learned")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "learned"))]
 #[derive(Args, Debug)]
 pub struct FetchModelsArgs {
     /// Directory to store models (default: XDG data dir or $SIGIL_MODEL_DIR)
@@ -92,14 +99,14 @@ pub struct FetchModelsArgs {
 
 // ─── c2pa ────────────────────────────────────────────────────────────────────
 
-#[cfg(feature = "c2pa")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "c2pa"))]
 #[derive(Args, Debug)]
 pub struct C2paArgs {
     #[command(subcommand)]
     pub command: C2paCommand,
 }
 
-#[cfg(feature = "c2pa")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "c2pa"))]
 #[derive(Subcommand, Debug)]
 pub enum C2paCommand {
     /// Generate a self-signed ES256 certificate + private key (PEM)
@@ -110,7 +117,7 @@ pub enum C2paCommand {
     Verify(C2paVerifyArgs),
 }
 
-#[cfg(feature = "c2pa")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "c2pa"))]
 #[derive(Args, Debug)]
 pub struct InitCertArgs {
     /// Organization / common name for the certificate
@@ -126,7 +133,7 @@ pub struct InitCertArgs {
     pub force: bool,
 }
 
-#[cfg(feature = "c2pa")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "c2pa"))]
 #[derive(Args, Debug)]
 pub struct C2paSignArgs {
     /// Input image (JPEG or PNG)
@@ -169,7 +176,7 @@ pub struct C2paSignArgs {
     pub key: Option<String>,
 }
 
-#[cfg(feature = "c2pa")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "c2pa"))]
 #[derive(Args, Debug)]
 pub struct C2paVerifyArgs {
     /// Image to inspect
@@ -178,6 +185,7 @@ pub struct C2paVerifyArgs {
 
 // ─── embed ───────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct EmbedArgs {
     /// Input image path (.png recommended; .jpg is accepted but output is always PNG)
@@ -277,6 +285,7 @@ pub struct EmbedArgs {
 
 // ─── verify ──────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct VerifyArgs {
     /// Image path to inspect
@@ -339,6 +348,7 @@ pub struct VerifyArgs {
 
 // ─── strip ───────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct StripArgs {
     /// Input image path (must be RGBA PNG)
@@ -351,6 +361,7 @@ pub struct StripArgs {
 
 // ─── info ────────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct InfoArgs {
     /// Input image path
@@ -370,6 +381,7 @@ pub struct InfoArgs {
 
 // ─── batch ───────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct BatchArgs {
     /// Operation: embed or strip
@@ -408,13 +420,17 @@ pub struct BatchArgs {
     pub recipient_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum BatchOperation {
     Embed,
     Strip,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum OutputFormat {
     Png,
     Jpg,
@@ -422,6 +438,7 @@ pub enum OutputFormat {
 
 // ─── extract ─────────────────────────────────────────────────────────────────
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Args, Debug)]
 pub struct ExtractArgs {
     /// Watermarked image to extract recipient ID from
