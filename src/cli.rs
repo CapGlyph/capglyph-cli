@@ -24,6 +24,12 @@ pub enum PlacementStrategy {
     Edge,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum ProtocolVersion {
+    V1,
+    V2,
+}
+
 impl std::fmt::Display for EmbedMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -248,6 +254,10 @@ pub struct EmbedArgs {
     #[arg(long, default_value_t = 0.95)]
     pub strength: f32,
 
+    /// DWT primary/secret-layer embedding strength.
+    #[arg(long, default_value_t = 8.0)]
+    pub dwt_strength: f32,
+
     /// Also sign the output with a C2PA manifest carrying the embed
     /// parameters as the com.sigil.watermark assertion
     #[cfg(feature = "c2pa")]
@@ -294,6 +304,14 @@ pub struct VerifyArgs {
     /// image has near-zero mean signal at those positions.
     #[arg(long, default_value_t = 4.0)]
     pub mean_threshold: f64,
+
+    /// Detector contract used by verification and calibration.
+    #[arg(long, default_value = "v1")]
+    pub protocol_version: ProtocolVersion,
+
+    /// Minimum semi-transparent pixels required by the v2 alpha rule.
+    #[arg(long, default_value_t = 16)]
+    pub min_alpha_pixels: u64,
 
     /// Secret key for verifying the key-derived secret layer.
     /// With a key, verify additionally checks the HMAC(key, image)-derived

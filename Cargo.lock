@@ -3530,6 +3530,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "c2pa",
+ "ciborium",
  "clap",
  "digest 0.11.3",
  "directories",
@@ -3538,6 +3539,7 @@ dependencies = [
  "image",
  "rcgen",
  "serde",
+ "serde_bytes",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",

@@ -79,6 +79,28 @@ pub fn embed(
     secret_key: Option<&str>,
     _placement: &crate::cli::PlacementStrategy,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
+    embed_with_strength(
+        img,
+        geometry,
+        recipient_id,
+        secret_key,
+        _placement,
+        DWT_EMBED_STRENGTH,
+    )
+}
+
+/// Embed using an explicit primary/secret-layer strength for development
+/// calibration. ID and sync strengths remain fixed because they carry a
+/// separate extraction contract.
+pub fn embed_with_strength(
+    img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
+    geometry: &GeometryFile,
+    recipient_id: Option<&str>,
+    secret_key: Option<&str>,
+    _placement: &crate::cli::PlacementStrategy,
+    strength: f32,
+) -> Result<(u64, Vec<(u32, u32)>)> {
+    anyhow::ensure!(strength > 0.0, "DWT strength must be positive");
     let (w, h) = img.dimensions();
 
     let positions = collect_embed_positions(geometry, w, h);
@@ -144,7 +166,7 @@ pub fn embed(
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                band[by][bx] += DWT_EMBED_STRENGTH;
+                band[by][bx] += strength;
                 total_modified += 1;
             }
         }
@@ -212,11 +234,7 @@ pub fn embed(
             let bx = bx as usize;
             let by = by as usize;
             if bx < bw && by < bh {
-                let delta = if i % 2 == 0 {
-                    DWT_EMBED_STRENGTH
-                } else {
-                    -DWT_EMBED_STRENGTH
-                };
+                let delta = if i % 2 == 0 { strength } else { -strength };
                 band[by][bx] += delta;
                 total_modified += 1;
             }
@@ -272,6 +290,263 @@ pub fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
     } else {
         sum / n as f64
     }
+}
+
+/// CTX-0020: Differential coded-bit layer for framed payload (LH band).
+///
+/// Same framing/ECC stack as DCT but in Haar LH coefficients.
+/// Primary watermark at geometry positions is preserved; sync seed at
+/// SEED_MAGIC positions; payload at keyed band positions.
+pub fn embed_coded_bits(
+    img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
+    geometry: &GeometryFile,
+    coded_bits: &[bool],
+    keys: &crate::keying::KeyMaterial,
+    _placement: &crate::cli::PlacementStrategy,
+) -> Result<(u64, Vec<(u32, u32)>)> {
+    let (w, h) = img.dimensions();
+    let positions = collect_embed_positions(geometry, w, h);
+    let band_w = w / 2;
+    let band_h = h / 2;
+
+    let seed = crate::dct::stable_seed(img);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+    let sync_positions = prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_positions.iter().copied().collect();
+
+    let needed_pairs = coded_bits.len() * 2;
+    let total_band = (band_w as usize) * (band_h as usize);
+    anyhow::ensure!(
+        sync_positions.len() + needed_pairs <= total_band,
+        "insufficient DWT band capacity: need {} (sync {} + payload {}), have {}",
+        sync_positions.len() + needed_pairs,
+        sync_positions.len(),
+        needed_pairs,
+        total_band
+    );
+    let mut payload_pairs: Vec<(u32, u32)> = Vec::new();
+    if needed_pairs > 0 {
+        let mut cand =
+            prng_band_positions(kseed, band_w, band_h, needed_pairs + sync_set.len() * 2);
+        cand.retain(|p| !sync_set.contains(p));
+        anyhow::ensure!(
+            cand.len() >= needed_pairs,
+            "insufficient keyed band positions"
+        );
+        cand.truncate(needed_pairs);
+        cand.sort_unstable();
+        payload_pairs = cand;
+    }
+
+    let seed_bits: Vec<bool> = seed
+        .to_le_bytes()
+        .iter()
+        .flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1 == 1))
+        .collect();
+
+    let mut total_modified = 0u64;
+    for ch in 0..3usize {
+        let channel_matrix = extract_channel(img, ch);
+        let mut decomp = haar_2d_forward(&channel_matrix)?;
+        let band = decomp.band_mut(EMBED_BAND);
+        let (bh, bw) = (band.len(), band[0].len());
+
+        // Primary geometry positions (+8)
+        for &(bx, by) in &positions {
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                band[by][bx] += DWT_EMBED_STRENGTH;
+                total_modified += 1;
+            }
+        }
+        // Sync seed
+        for (i, &(bx, by)) in sync_positions.iter().enumerate() {
+            let bit_idx = i / SYNC_REDUNDANCY;
+            if bit_idx >= seed_bits.len() {
+                break;
+            }
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                let is_flat = band[by][bx].abs() < FLAT_LH_THRESHOLD;
+                let strength = if is_flat {
+                    FLAT_ID_EMBED_STRENGTH
+                } else {
+                    DWT_ID_EMBED_STRENGTH
+                };
+                let delta = if seed_bits[bit_idx] {
+                    strength
+                } else {
+                    -strength
+                };
+                band[by][bx] += delta;
+                total_modified += 1;
+            }
+        }
+        // Payload differential pairs at LH
+        for (i, &bit) in coded_bits.iter().enumerate() {
+            let (bx0, by0) = payload_pairs[2 * i];
+            let (bx1, by1) = payload_pairs[2 * i + 1];
+            // Decide per-pair strength based on pre-mod coefficient flatness
+            let is_flat0 = {
+                let bx = bx0 as usize;
+                let by = by0 as usize;
+                if bx < bw && by < bh {
+                    band[by][bx].abs() < FLAT_LH_THRESHOLD
+                } else {
+                    false
+                }
+            };
+            let is_flat1 = {
+                let bx = bx1 as usize;
+                let by = by1 as usize;
+                if bx < bw && by < bh {
+                    band[by][bx].abs() < FLAT_LH_THRESHOLD
+                } else {
+                    false
+                }
+            };
+            let s0 = if is_flat0 {
+                FLAT_ID_EMBED_STRENGTH
+            } else {
+                DWT_ID_EMBED_STRENGTH
+            };
+            let s1 = if is_flat1 {
+                FLAT_ID_EMBED_STRENGTH
+            } else {
+                DWT_ID_EMBED_STRENGTH
+            };
+            let d0 = if bit { s0 } else { -s0 };
+            let d1 = -d0 * (s1 / s0.max(1.0)); // keep opposite sign, scale to local flatness
+            let bx0u = bx0 as usize;
+            let by0u = by0 as usize;
+            let bx1u = bx1 as usize;
+            let by1u = by1 as usize;
+            if bx0u < bw && by0u < bh {
+                band[by0u][bx0u] += d0;
+                total_modified += 1;
+            }
+            if bx1u < bw && by1u < bh {
+                band[by1u][bx1u] += d1;
+                total_modified += 1;
+            }
+        }
+
+        let reconstructed = haar_2d_inverse(&decomp)?;
+        write_channel(img, ch, &reconstructed);
+    }
+    Ok((total_modified / 3, positions))
+}
+
+pub fn extract_coded_bits_soft(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    extract_coded_bits_soft_with_hint(img, keys, None)
+}
+
+pub fn extract_coded_bits_soft_with_hint(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+    expected_bits: Option<usize>,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    let (w, h) = img.dimensions();
+    let band_w = w / 2;
+    let band_h = h / 2;
+    let sync_positions = prng_band_positions(SEED_MAGIC, band_w, band_h, 64 * SYNC_REDUNDANCY);
+    // Recover seed from sync positions (average across channels)
+    let mut sync_signals = vec![0.0f32; 64 * SYNC_REDUNDANCY];
+    for ch in 0..3usize {
+        let channel_matrix = extract_channel(img, ch);
+        let decomp = haar_2d_forward(&channel_matrix)?;
+        let band = decomp.band(EMBED_BAND);
+        let (bh, bw) = (band.len(), band[0].len());
+        for (i, &(bx, by)) in sync_positions.iter().enumerate() {
+            let bx = bx as usize;
+            let by = by as usize;
+            if bx < bw && by < bh {
+                sync_signals[i] += band[by][bx];
+            }
+        }
+    }
+    for s in &mut sync_signals {
+        *s /= 3.0;
+    }
+    let sync_global = sync_signals.iter().sum::<f32>() / sync_signals.len() as f32;
+    let mut seed_bits = Vec::with_capacity(64);
+    for bit_idx in 0..64 {
+        let start = bit_idx * SYNC_REDUNDANCY;
+        let gm: f32 = sync_signals[start..start + SYNC_REDUNDANCY]
+            .iter()
+            .sum::<f32>()
+            / SYNC_REDUNDANCY as f32;
+        seed_bits.push(gm > sync_global);
+    }
+    let mut seed_bytes = [0u8; 8];
+    for (i, chunk) in seed_bits.chunks(8).enumerate() {
+        seed_bytes[i] = chunk.iter().fold(0u8, |acc, &b| (acc << 1) | (b as u8));
+    }
+    let seed = u64::from_le_bytes(seed_bytes);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_positions.iter().copied().collect();
+    let (n_bits, cand) = if let Some(exp) = expected_bits {
+        let mut cand = prng_band_positions(kseed, band_w, band_h, exp * 2 + sync_set.len() * 2);
+        cand.retain(|p| !sync_set.contains(p));
+        anyhow::ensure!(
+            cand.len() >= exp * 2,
+            "insufficient keyed band positions for expected bits"
+        );
+        cand.truncate(exp * 2);
+        cand.sort_unstable();
+        (exp, cand)
+    } else {
+        let total_band = (band_w as usize) * (band_h as usize);
+        let max_pairs = (total_band.saturating_sub(sync_positions.len())) / 2;
+        let mut cand =
+            prng_band_positions(kseed, band_w, band_h, max_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|p| !sync_set.contains(p));
+        cand.truncate(max_pairs * 2);
+        cand.sort_unstable();
+        if !cand.len().is_multiple_of(2) {
+            cand.pop();
+        }
+        (cand.len() / 2, cand)
+    };
+    let mut diffs = Vec::with_capacity(n_bits);
+    // Collect per-channel band for diff calc
+    // We average across channels for each pair difference.
+    let mut bands = Vec::new();
+    for ch in 0..3usize {
+        let channel_matrix = extract_channel(img, ch);
+        let decomp = haar_2d_forward(&channel_matrix)?;
+        bands.push(decomp.band(EMBED_BAND).clone());
+    }
+    for i in 0..n_bits {
+        let (bx0, by0) = cand[2 * i];
+        let (bx1, by1) = cand[2 * i + 1];
+        let mut d0 = 0.0f32;
+        let mut d1 = 0.0f32;
+        for band in &bands {
+            let (bh, bw) = (band.len(), band[0].len());
+            let (bx0u, by0u) = (bx0 as usize, by0 as usize);
+            let (bx1u, by1u) = (bx1 as usize, by1 as usize);
+            if bx0u < bw && by0u < bh {
+                d0 += band[by0u][bx0u];
+            }
+            if bx1u < bw && by1u < bh {
+                d1 += band[by1u][bx1u];
+            }
+        }
+        d0 /= 3.0;
+        d1 /= 3.0;
+        diffs.push(d0 - d1);
+    }
+    let sigma = crate::ecc::estimate_sigma(&diffs);
+    Ok(diffs
+        .iter()
+        .map(|&d| crate::ecc::SoftBit::from_coeff(d, sigma))
+        .collect())
 }
 
 // ── Verify ────────────────────────────────────────────────────────────────────
@@ -337,6 +612,65 @@ pub fn verify(
         detection_rate,
         mean_signal: (signal_sum / total.max(1) as f64) as f32,
     })
+}
+
+/// Blind v2 statistic: median-centred, MAD-normalized LH signal.
+/// The reference is computed from the evaluated image itself, so no cover or
+/// marked-image geometry artifact is required. Complexity is O(N log N) time
+/// and O(N) auxiliary space for each RGB channel.
+pub fn verify_v2(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    geometry: &GeometryFile,
+) -> Result<DwtSignalMetrics> {
+    let (w, h) = img.dimensions();
+    let positions = collect_embed_positions(geometry, w, h);
+    if positions.is_empty() {
+        return Ok(DwtSignalMetrics {
+            total_coefficients: 0,
+            detected_count: 0,
+            detection_rate: 0.0,
+            mean_signal: 0.0,
+        });
+    }
+    let mut total = 0u64;
+    let mut detected = 0u64;
+    let mut score_sum = 0.0f64;
+    for ch in 0..3usize {
+        let decomp = haar_2d_forward(&extract_channel(img, ch))?;
+        let band = decomp.band(EMBED_BAND);
+        let mut values: Vec<f32> = band.iter().flat_map(|row| row.iter().copied()).collect();
+        let centre = median(&mut values);
+        let mut deviations: Vec<f32> = values.iter().map(|v| (v - centre).abs()).collect();
+        let scale = median(&mut deviations).max(1.0);
+        for &(bx, by) in &positions {
+            if let Some(&value) = band.get(by as usize).and_then(|row| row.get(bx as usize)) {
+                let score = (value - centre) as f64 / scale as f64;
+                score_sum += score;
+                detected += u64::from(score > 0.0);
+                total += 1;
+            }
+        }
+    }
+    Ok(DwtSignalMetrics {
+        total_coefficients: total,
+        detected_count: detected,
+        detection_rate: if total == 0 {
+            0.0
+        } else {
+            detected as f64 / total as f64
+        },
+        mean_signal: (score_sum / total.max(1) as f64) as f32,
+    })
+}
+
+fn median(values: &mut [f32]) -> f32 {
+    values.sort_by(f32::total_cmp);
+    let middle = values.len() / 2;
+    if values.len().is_multiple_of(2) {
+        (values[middle - 1] + values[middle]) / 2.0
+    } else {
+        values[middle]
+    }
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────

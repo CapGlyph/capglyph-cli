@@ -20,3 +20,10 @@ pub mod spread_spectrum;
 pub mod strip;
 pub mod verify;
 pub mod wasm_api;
+// ── Refactor CTX-0018: carrier trait + core group (single crate, no new crates) ──
+pub mod carrier;
+pub mod core;
+// ── CTX-0020: framing + ECC + interleave + soft-bits ──
+pub mod ecc;
+pub mod framing;
+pub mod interleave;

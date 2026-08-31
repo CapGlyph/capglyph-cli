@@ -57,6 +57,7 @@ pub fn embed_bytes(
         recipient_id,
         key,
         &crate::cli::PlacementStrategy::Skeleton,
+        crate::dwt_embed::DWT_EMBED_STRENGTH,
     )?;
 
     let mut buf = std::io::Cursor::new(Vec::new());

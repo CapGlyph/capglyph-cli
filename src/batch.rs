@@ -63,6 +63,7 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             recipient_id: args.recipient_id.clone(),
             model_dir: None,
             strength: 0.95,
+            dwt_strength: crate::dwt_embed::DWT_EMBED_STRENGTH,
             key: None,
             placement: Default::default(),
             #[cfg(feature = "c2pa")]
