@@ -8,4 +8,4 @@
 6. Public commands, fields, templates, errors, defaults, and limits require implementation and test evidence from the owning revision.
 7. Documentation status must stay honest throughout implementation. Candidate text cannot authorize code by itself.
 8. Record cross-crate docs tasks and ordering in CarryCtx; stale affected documentation keeps the implementation task incomplete.
-9. Formal repository references use the canonical organization URL `https://github.com/Xuepoo/sigil`.
+9. Formal repository references use the canonical organization URL `https://github.com/CapGlyph/capglyph-cli`.

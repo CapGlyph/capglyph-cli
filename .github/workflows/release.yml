@@ -16,41 +16,41 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: sigil
+        working-directory: capglyph-cli
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: sigil-linux-x86_64
+            artifact_name: capglyph-linux-x86_64
             arch: amd64
             os_name: linux
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact_name: sigil-linux-aarch64
+            artifact_name: capglyph-linux-aarch64
             arch: arm64
             os_name: linux
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: sigil-windows-x86_64.exe
+            artifact_name: capglyph-windows-x86_64.exe
             os_name: windows
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact_name: sigil-macos-x86_64
+            artifact_name: capglyph-macos-x86_64
             os_name: macos
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact_name: sigil-macos-aarch64
+            artifact_name: capglyph-macos-aarch64
             os_name: macos
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
         with:
-          path: sigil
+          path: capglyph-cli
 
-      # Sigil depends on the vectomancy crates via path deps (../vectomancy).
+      # CapGlyph (formerly Sigil) depends on the vectomancy crates via path deps (../vectomancy).
       - name: Checkout vectomancy (path dependency)
         uses: actions/checkout@v7.0.1
         with:
@@ -67,9 +67,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            sigil/target
+            capglyph-cli/target
             vectomancy/target
-          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: release-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Build release (learned+c2pa features)
@@ -77,11 +77,11 @@ jobs:
 
       - name: Rename artifact (Linux/macOS)
         if: ${{ !contains(matrix.target, 'windows') }}
-        run: mv "target/${{ matrix.target }}/release/sigil" "${{ matrix.artifact_name }}"
+        run: mv "target/${{ matrix.target }}/release/capglyph" "${{ matrix.artifact_name }}"
 
       - name: Rename artifact (Windows)
         if: ${{ contains(matrix.target, 'windows') }}
-        run: move "target/${{ matrix.target }}/release/sigil.exe" "${{ matrix.artifact_name }}"
+        run: move "target/${{ matrix.target }}/release/capglyph.exe" "${{ matrix.artifact_name }}"
 
       - name: Package tarball (Linux/macOS)
         if: ${{ !contains(matrix.target, 'windows') }}
@@ -103,10 +103,10 @@ jobs:
           fi
           curl -sL https://github.com/goreleaser/nfpm/releases/download/v2.37.1/nfpm_2.37.1_Linux_${NFPM_ARCH}.tar.gz | tar xz nfpm
           sed -i "s/amd64/${NFPM_ARCH}/g" nfpm.yaml
-          sed -i "s/sigil-linux-x86_64/${{ matrix.artifact_name }}/g" nfpm.yaml
-          ./nfpm pkg --packager deb --target sigil-linux-${PKG_ARCH}.deb
-          ./nfpm pkg --packager rpm --target sigil-linux-${PKG_ARCH}.rpm
-          ./nfpm pkg --packager archlinux --target sigil-linux-${PKG_ARCH}.pkg.tar.zst
+          sed -i "s/capglyph-linux-x86_64/${{ matrix.artifact_name }}/g" nfpm.yaml
+          ./nfpm pkg --packager deb --target capglyph-linux-${PKG_ARCH}.deb
+          ./nfpm pkg --packager rpm --target capglyph-linux-${PKG_ARCH}.rpm
+          ./nfpm pkg --packager archlinux --target capglyph-linux-${PKG_ARCH}.pkg.tar.zst
 
       - name: Upload artifact
         # v5 runs on the Node24 runtime; v4.x still declares node20 and
@@ -115,11 +115,11 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            sigil/${{ matrix.artifact_name }}.tar.gz
-            sigil/${{ matrix.artifact_name }}.zip
-            sigil/*.deb
-            sigil/*.rpm
-            sigil/*.pkg.tar.zst
+            capglyph-cli/${{ matrix.artifact_name }}.tar.gz
+            capglyph-cli/${{ matrix.artifact_name }}.zip
+            capglyph-cli/*.deb
+            capglyph-cli/*.rpm
+            capglyph-cli/*.pkg.tar.zst
 
   release-github:
     name: Create GitHub Release
@@ -171,9 +171,9 @@ jobs:
           git config --global user.name "Xuepoo (CI)"
           git config --global user.email "xuepoofoter@gmail.com"
 
-      - name: Update AUR source package (sigil-wm)
+      - name: Update AUR source package (capglyph, formerly sigil-wm)
         run: |
-          git clone ssh://aur@aur.archlinux.org/sigil-wm.git aur-src
+          git clone ssh://aur@aur.archlinux.org/capglyph.git aur-src
           cd aur-src
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
@@ -183,33 +183,34 @@ jobs:
           if [ ! -f PKGBUILD ]; then
             cat << PKGEOF > PKGBUILD
           # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
-          pkgname=sigil-wm
+          pkgname=capglyph
           pkgver=${CLEAN_VERSION}
           pkgrel=1
           pkgdesc="Invisible structural watermark for images"
           arch=('x86_64' 'aarch64')
-          url="https://github.com/Xuepoo/sigil"
+          url="https://github.com/CapGlyph/capglyph-cli"
           license=('Apache-2.0')
           _vmver=8.0.0
-          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/archive/refs/tags/v\$pkgver.tar.gz"
+          source=("capglyph-\$pkgver::https://github.com/CapGlyph/capglyph-cli/archive/refs/tags/v\$pkgver.tar.gz"
                   "vectomancy-\$_vmver::https://github.com/Xuepoo/vectomancy/archive/refs/tags/v\$_vmver.tar.gz")
           sha256sums=('SKIP'
                       'SKIP')
           makedepends=('cargo')
 
           prepare() {
-            # sigil's Cargo.toml depends on ../vectomancy path deps
-            ln -sfn "\$srcdir/vectomancy-\$_vmver" "\$srcdir/sigil-\$pkgver/../vectomancy"
+            # capglyph's Cargo.toml (formerly sigil) depends on ../vectomancy path deps
+            ln -sfn "\$srcdir/vectomancy-\$_vmver" "\$srcdir/capglyph-\$pkgver/../vectomancy"
           }
 
           build() {
-            cd "sigil-\$pkgver"
+            cd "capglyph-\$pkgver"
             cargo build --release --locked --features learned,c2pa
           }
 
           package() {
-            cd "sigil-\$pkgver"
-            install -Dm755 "target/release/sigil" "\$pkgdir/usr/bin/sigil"
+            cd "capglyph-\$pkgver"
+            install -Dm755 "target/release/capglyph" "\$pkgdir/usr/bin/capglyph"
+            ln -sf capglyph "\$pkgdir/usr/bin/sigil"
           }
           PKGEOF
           else
@@ -224,9 +225,9 @@ jobs:
           git commit -m "Update to v${CLEAN_VERSION}" || true
           git push origin master
 
-      - name: Update AUR binary package (sigil-wm-bin)
+      - name: Update AUR binary package (capglyph-bin, formerly sigil-wm-bin)
         run: |
-          git clone ssh://aur@aur.archlinux.org/sigil-wm-bin.git aur-bin
+          git clone ssh://aur@aur.archlinux.org/capglyph-bin.git aur-bin
           cd aur-bin
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
@@ -234,20 +235,21 @@ jobs:
           if [ ! -f PKGBUILD ]; then
             cat << PKGEOF > PKGBUILD
           # Maintainer: Xuepoo (CI) <xuepoofoter@gmail.com>
-          pkgname=sigil-wm-bin
+          pkgname=capglyph-bin
           pkgver=${CLEAN_VERSION}
           pkgrel=1
           pkgdesc="Invisible structural watermark for images (binary release)"
           arch=('x86_64' 'aarch64')
-          url="https://github.com/Xuepoo/sigil"
+          url="https://github.com/CapGlyph/capglyph-cli"
           license=('Apache-2.0')
           _arch="x86_64"
           [ "\$CARCH" = "aarch64" ] && _arch="aarch64"
-          source=("sigil-\$pkgver::https://github.com/Xuepoo/sigil/releases/download/v\$pkgver/sigil-linux-\${_arch}.tar.gz")
+          source=("capglyph-\$pkgver::https://github.com/CapGlyph/capglyph-cli/releases/download/v\$pkgver/capglyph-linux-\${_arch}.tar.gz")
           sha256sums=('SKIP')
 
           package() {
-            install -Dm755 "sigil" "\$pkgdir/usr/bin/sigil"
+            install -Dm755 "capglyph" "\$pkgdir/usr/bin/capglyph"
+            ln -sf capglyph "\$pkgdir/usr/bin/sigil"
           }
           PKGEOF
           else
@@ -271,7 +273,7 @@ jobs:
       - name: Checkout tap repository
         uses: actions/checkout@v7.0.1
         with:
-          repository: Xuepoo/homebrew-tap
+          repository: CapGlyph/homebrew-tap
           token: ${{ secrets.GH_PAT }}
           path: homebrew-tap
 
@@ -279,33 +281,35 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-x86_64.tar.gz"
-          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-aarch64.tar.gz"
-          SHA_INTEL=$(sha256sum sigil-macos-x86_64.tar.gz | awk '{print $1}')
-          SHA_ARM=$(sha256sum sigil-macos-aarch64.tar.gz | awk '{print $1}')
+          curl -sL -O "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-macos-x86_64.tar.gz"
+          curl -sL -O "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-macos-aarch64.tar.gz"
+          SHA_INTEL=$(sha256sum capglyph-macos-x86_64.tar.gz | awk '{print $1}')
+          SHA_ARM=$(sha256sum capglyph-macos-aarch64.tar.gz | awk '{print $1}')
 
           mkdir -p homebrew-tap/Formula
-          cat << EOF > homebrew-tap/Formula/sigil.rb
-          class Sigil < Formula
+          cat << EOF > homebrew-tap/Formula/capglyph.rb
+          class Capglyph < Formula
             desc "Invisible structural watermark for images"
-            homepage "https://github.com/Xuepoo/sigil"
+            homepage "https://github.com/CapGlyph/capglyph-cli"
             version "${CLEAN_VERSION}"
             license "Apache-2.0"
 
             if OS.mac? && Hardware::CPU.intel?
-              url "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-x86_64.tar.gz"
+              url "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-macos-x86_64.tar.gz"
               sha256 "${SHA_INTEL}"
             elsif OS.mac? && Hardware::CPU.arm?
-              url "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-macos-aarch64.tar.gz"
+              url "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-macos-aarch64.tar.gz"
               sha256 "${SHA_ARM}"
             end
 
             def install
-              bin.install "sigil"
+              bin.install "capglyph"
+              # keep sigil alias for compatibility
+              bin.install_symlink bin/"capglyph" => "sigil"
             end
 
             test do
-              system "#{bin}/sigil", "--version"
+              system "#{bin}/capglyph", "--version"
             end
           end
           EOF
@@ -313,8 +317,8 @@ jobs:
           cd homebrew-tap
           git config user.name "Xuepoo (CI)"
           git config user.email "xuepoofoter@gmail.com"
-          git add Formula/sigil.rb
-          git commit -m "Update Sigil to ${CLEAN_VERSION}" || true
+          git add Formula/capglyph.rb
+          git commit -m "Update CapGlyph to ${CLEAN_VERSION}" || true
           git push origin main
 
   sync-scoop:
@@ -326,7 +330,7 @@ jobs:
       - name: Checkout scoop repository
         uses: actions/checkout@v7.0.1
         with:
-          repository: Xuepoo/scoop-bucket
+          repository: CapGlyph/scoop-bucket
           token: ${{ secrets.GH_PAT }}
           path: scoop-bucket
 
@@ -334,25 +338,25 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          curl -sL -O "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-windows-x86_64.exe.zip"
-          SHA_WIN=$(sha256sum sigil-windows-x86_64.exe.zip | awk '{print $1}')
+          curl -sL -O "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-windows-x86_64.exe.zip"
+          SHA_WIN=$(sha256sum capglyph-windows-x86_64.exe.zip | awk '{print $1}')
 
           mkdir -p scoop-bucket/bucket
-          cat << EOF > scoop-bucket/bucket/sigil.json
+          cat << EOF > scoop-bucket/bucket/capglyph.json
           {
             "version": "${CLEAN_VERSION}",
             "description": "Invisible structural watermark for images",
-            "homepage": "https://github.com/Xuepoo/sigil",
+            "homepage": "https://github.com/CapGlyph/capglyph-cli",
             "license": "Apache-2.0",
             "architecture": {
               "64bit": {
-                "url": "https://github.com/Xuepoo/sigil/releases/download/${VERSION}/sigil-windows-x86_64.exe.zip",
+                "url": "https://github.com/CapGlyph/capglyph-cli/releases/download/${VERSION}/capglyph-windows-x86_64.exe.zip",
                 "hash": "${SHA_WIN}"
               }
             },
-            "bin": "sigil-windows-x86_64.exe",
+            "bin": "capglyph-windows-x86_64.exe",
             "checkver": {
-              "github": "https://github.com/Xuepoo/sigil"
+              "github": "https://github.com/CapGlyph/capglyph-cli"
             }
           }
           EOF
@@ -360,6 +364,6 @@ jobs:
           cd scoop-bucket
           git config user.name "Xuepoo (CI)"
           git config user.email "xuepoofoter@gmail.com"
-          git add bucket/sigil.json
-          git commit -m "Update Sigil to ${CLEAN_VERSION}" || true
+          git add bucket/capglyph.json
+          git commit -m "Update CapGlyph to ${CLEAN_VERSION}" || true
           git push origin main

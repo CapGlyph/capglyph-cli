@@ -1,12 +1,14 @@
-# Sigil
+# CapGlyph
 
 面向图像的隐形结构水印 —— 来源证明、泄露追踪与篡改检测。
+
+> 原名 **Sigil** —— `sigil` 二进制、`com.sigil.watermark` 声明及 `SIGIL_*` 环境变量仍作为兼容别名保留。
 
 [English](README.md)
 
 ## 功能
 
-Sigil 将亚感知水印嵌入 PNG/JPEG 图像，之后可验证其存在性、提取分发给特定接收者的 ID，或通过密钥证明归属。四种独立的嵌入技术：
+CapGlyph 将亚感知水印嵌入 PNG/JPEG 图像，之后可验证其存在性、提取分发给特定接收者的 ID，或通过密钥证明归属。四种独立的嵌入技术：
 
 | 模式      | 技术                        | 构建方式             |
 | --------- | --------------------------- | -------------------- |
@@ -18,32 +20,32 @@ Sigil 将亚感知水印嵌入 PNG/JPEG 图像，之后可验证其存在性、�
 ## 安装
 
 Linux、macOS 和 Windows 的预编译二进制（含 `learned` 与 `c2pa` 特性）随每个
-[GitHub Release](https://github.com/Xuepoo/sigil/releases) 发布。
+[GitHub Release](https://github.com/CapGlyph/capglyph-cli/releases) 发布。
 
 **macOS / Linux — Homebrew：**
 
 ```bash
-brew tap xuepoo/tap
-brew install sigil
+brew tap CapGlyph/tap
+brew install capglyph   # 别名 `sigil` 仍可用
 ```
 
 **Windows — Scoop：**
 
 ```powershell
-scoop bucket add xuepoo https://github.com/Xuepoo/scoop-bucket
-scoop install sigil
+scoop bucket add capglyph https://github.com/CapGlyph/scoop-bucket
+scoop install capglyph
 ```
 
 **Arch Linux — AUR：**
 
 ```bash
-yay -S sigil-wm-bin      # 预编译二进制（推荐）
+yay -S capglyph-bin      # 预编译二进制（推荐，原 sigil-wm-bin）
 # 或从源码构建：
-yay -S sigil-wm
+yay -S capglyph          # 原 sigil-wm
 ```
 
 **Linux — deb / rpm / pkg.tar.zst：** 从
-[最新 release](https://github.com/Xuepoo/sigil/releases/latest) 下载。
+[最新 release](https://github.com/CapGlyph/capglyph-cli/releases/latest) 下载。
 
 ## 从源码构建
 
@@ -57,22 +59,23 @@ cargo build --release --features c2pa     # + C2PA 内容凭证
 
 ```bash
 # 嵌入特定接收者的水印
-sigil embed photo.png --mode dwt --recipient-id "alice001" --output photo_wm.png
+capglyph embed photo.png --mode dwt --recipient-id "alice001" --output photo_wm.png
+# 别名仍可用: sigil embed ...
 
 # 验证
-sigil verify photo_wm.png --mode dwt; echo $?        # 0 = 存在
+capglyph verify photo_wm.png --mode dwt; echo $?        # 0 = 存在
 
 # 提取 ID（无需原图——泄露副本上即可提取）
-sigil extract leaked.png --mode dwt --id-length 8
+capglyph extract leaked.png --mode dwt --id-length 8
 
 # 密钥归属（可抵御共谋攻击）
-sigil embed photo.png --mode dwt --recipient-id "bob" --key "mysecret"
-sigil verify photo_wm.png --mode dwt --key "mysecret"   # + SECRET LAYER PRESENT
+capglyph embed photo.png --mode dwt --recipient-id "bob" --key "mysecret"
+capglyph verify photo_wm.png --mode dwt --key "mysecret"   # + SECRET LAYER PRESENT
 
 # learned 模式（激进编辑抵抗力：JPEG q30、模糊 σ2、缩放 0.5×）
-sigil fetch-models                          # 下载 TrustMark ONNX（约 65MB）
-sigil embed photo.png --mode learned --recipient-id "carol"
-sigil extract leaked.png --mode learned
+capglyph fetch-models                          # 下载 TrustMark ONNX（约 65MB）
+capglyph embed photo.png --mode learned --recipient-id "carol"
+capglyph extract leaked.png --mode learned
 ```
 
 ## 攻击矩阵（实测）
@@ -89,10 +92,11 @@ sigil extract leaked.png --mode learned
 
 ## 嵌入位置策略 (评估对比)
 
-为了进行实证评估和基准对比，Sigil 支持三种块嵌入策略（通过 `--placement` 标志配置）：
-* `skeleton` (默认)：沿着图像的几何拓扑路径（边缘和轮廓）嵌入水印。
-* `edge`：一种竞争性基线策略，专门针对标准的高方差边缘块进行嵌入。
-* `prng`：一种内部控制策略，将水印伪随机地均匀分布在整个图像中。
+为了进行实证评估和基准对比，CapGlyph 支持三种块嵌入策略（通过 `--placement` 标志配置）：
+
+- `skeleton` (默认)：沿着图像的几何拓扑路径（边缘和轮廓）嵌入水印。
+- `edge`：一种竞争性基线策略，专门针对标准的高方差边缘块进行嵌入。
+- `prng`：一种内部控制策略，将水印伪随机地均匀分布在整个图像中。
 
 ## 安全模型
 
@@ -112,4 +116,4 @@ sigil extract leaked.png --mode learned
 ## 许可证
 
 Apache-2.0。learned 模式嵌入了 Adobe TrustMark 模型（MIT 许可，从
-Adobe CDN 单独下载——不随 Sigil 分发）。
+Adobe CDN 单独下载——不随 CapGlyph 分发，原 Sigil 亦如此）。

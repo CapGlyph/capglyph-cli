@@ -1,9 +1,13 @@
 # Changelog
 
-All notable changes to Sigil are documented here. The format follows
+All notable changes to CapGlyph (formerly Sigil) are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- Docs rename Sigil → CapGlyph (CTX-0039): `README.md`, `README.zh-CN.md`, `docs/mvp-spec.md`, `docs/product-roadmap.md`, `docs/roadmap.md`, `docs/sigil-core-api.md` → `docs/capglyph-core-api.md`, `.github/workflows/*`, `nfpm.yaml` — URLs updated to `https://github.com/CapGlyph/capglyph-cli` (legacy Sigil location now redirects), binary `sigil` → `capglyph` (alias `sigil` retained), env `SIGIL_*` → `CAPGLYPH_*` (fallback `SIGIL_*` retained), brew `xuepoo/tap` → `CapGlyph/tap`, scoop `Xuepoo/scoop-bucket` → `CapGlyph/scoop-bucket`, `com.sigil.watermark` → `com.capglyph.watermark` (legacy still read).
 
 ### Added
 
@@ -13,13 +17,14 @@ All notable changes to Sigil are documented here. The format follows
 
 ### Added
 
-- C2PA content credentials: `sigil c2pa init/sign/verify` — self-signed ES256
+- C2PA content credentials: `capglyph c2pa init/sign/verify` (legacy `sigil c2pa`) — self-signed ES256
   certificate generation (rcgen), signing with pure-Rust crypto (no OpenSSL),
   verification with JSON report and exit codes (0 = valid, 1 = invalid,
   2 = unsigned)
 - Dual-layer provenance: `embed --c2pa` / `verify --c2pa` sign and verify a
   C2PA manifest alongside the pixel watermark, cross-referencing mode,
-  recipient ID, and keyed flag via the `com.sigil.watermark` assertion
+  recipient ID, and keyed flag via the `com.capglyph.watermark` assertion
+  (legacy `com.sigil.watermark` still recognized)
 - Truthful provenance: `c2pa.created` digital source type parameterized via
   `--source-type` (`capture | algorithmic | composite | trained`), defaulting
   to `digitalCapture` to avoid false AI-origin attestation
@@ -45,10 +50,10 @@ All notable changes to Sigil are documented here. The format follows
   (survives collusion, blocks forgery)
 - Keyed learned-mode payload: ID XOR-encrypted with HMAC keystream — ID
   privacy without the key, attribution proof with it
-- `sigil batch` bulk embedding/stripping with glob patterns and JPEG output
-- `sigil info` signal statistics without pass/fail threshold
-- `sigil extract` geometry-free recipient-ID recovery (DCT/DWT/learned)
-- `sigil fetch-models` downloads TrustMark ONNX models (proxy-aware)
+- `capglyph batch` (legacy `sigil batch`) bulk embedding/stripping with glob patterns and JPEG output
+- `capglyph info` signal statistics without pass/fail threshold
+- `capglyph extract` geometry-free recipient-ID recovery (DCT/DWT/learned)
+- `capglyph fetch-models` downloads TrustMark ONNX models (proxy-aware)
 - `--recipient-id` per-recipient tracing, `--key` secret attribution
 - Solid-color PRNG fallback (DCT/DWT embed on images without geometry)
 - Alpha channel preservation on RGBA inputs; white compositing in `strip`

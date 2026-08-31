@@ -1,14 +1,14 @@
-# Sigil — Specification v1.0
+# CapGlyph — Specification v1.0
 
-**Version:** 0.1.0 (code) / 1.0 (spec)
-**Date:** 2026-08-15
+**Version:** 0.2.0 (code) / 1.0 (spec)
+**Date:** 2026-08-15 (updated 2026-08-31 for CapGlyph rename, formerly Sigil)
 **Status:** Implemented & verified (28 tests; attack matrices Q1.3–Q1.14, Q4.1–Q4.6)
 
 ---
 
-## 1. What Sigil Is
+## 1. What CapGlyph Is
 
-Sigil embeds invisible, machine-detectable watermarks into images using four
+CapGlyph (formerly Sigil) embeds invisible, machine-detectable watermarks into images using four
 independent embedding technologies ("modes"):
 
 | Mode      | Technology                             | Payload                        | Strengths                                    | Weaknesses                                 |
@@ -34,16 +34,17 @@ Q1.13/Q1.14 verified this for both classical and learned embedding.
 ## 2. Commands
 
 ```
-sigil embed   <input> [--mode alpha|dct|dwt|learned] [--recipient-id ID]
-              [--key SECRET] [--output OUT] [--save-geometry GEO.json]
-              [--stroke S] [--detail D] [--strength 0.95]
-sigil verify  <input> [--mode M] [--recipient-id ID] [--key SECRET]
-              [--mean-threshold T] [--verbose]
-sigil extract <input> [--mode dct|dwt|learned] [--id-length L]
-sigil strip   <input> [--output OUT]
-sigil info    <input> [--mode alpha|dct]
-sigil batch   embed|strip <glob> --output-dir DIR [--mode M] [--format png|jpg]
-sigil fetch-models [--model-dir DIR]   # learned feature only
+capglyph embed   <input> [--mode alpha|dct|dwt|learned] [--recipient-id ID]
+                 [--key SECRET] [--output OUT] [--save-geometry GEO.json]
+                 [--stroke S] [--detail D] [--strength 0.95]
+capglyph verify  <input> [--mode M] [--recipient-id ID] [--key SECRET]
+                 [--mean-threshold T] [--verbose]
+capglyph extract <input> [--mode dct|dwt|learned] [--id-length L]
+capglyph strip   <input> [--output OUT]
+capglyph info    <input> [--mode alpha|dct]
+capglyph batch   embed|strip <glob> --output-dir DIR [--mode M] [--format png|jpg]
+capglyph fetch-models [--model-dir DIR]   # learned feature only
+# legacy alias `sigil` still accepted for all subcommands
 ```
 
 Exit codes: `verify` returns 0 (PRESENT) / 1 (ABSENT).
@@ -74,7 +75,7 @@ Exit codes: `verify` returns 0 (PRESENT) / 1 (ABSENT).
 - Adobe TrustMark (MIT) variant Q, BCH_5 (61 data bits ≈ 7 ASCII bytes)
 - Payload = recipient ID packed into bits
 - Models: encoder_Q.onnx (17MB) + decoder_Q.onnx (47MB) from Adobe CDN,
-  cached in XDG data dir (`$SIGIL_MODEL_DIR` overrides)
+  cached in XDG data dir (`$CAPGLYPH_MODEL_DIR` overrides, fallback `$SIGIL_MODEL_DIR` for compatibility)
 - verify: bit accuracy ≥ 90% ⇒ PRESENT
 
 ## 4. Measured Attack Matrix (fixture suite, 1254×1254 + extreme set)
