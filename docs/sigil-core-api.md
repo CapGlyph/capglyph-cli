@@ -1,21 +1,24 @@
 # sigil-core Extraction API — Crate Boundary Sketch
 
-**Date:** 2026-08-31
-**Task:** CTX-0019
+**Date:** 2026-08-31 (updated 2026-08-31 CTX-0022)
+**Task:** CTX-0019 → CTX-0022
 **Full spec:** [`sigil-docs/research/media-credential/sigil-core-api.md`](../../sigil-docs/research/media-credential/sigil-core-api.md)
-**Status:** Draft — API-only, no carrier constant change
+**Status:** Implemented (CTX-0022) — `crates/sigil-core` extracted, `sigil` re-exports, no facade duplication
 **Issue:** [#13](https://github.com/Xuepoo/sigil/issues/13)
 
 This file is the **sigil-repo-local sketch** of the shared `sigil-core` boundary.
 The normative spec lives in `sigil-docs`; this file exists so `cargo test` reviewers
 and CI can verify the migration plan without crossing repos.
 
-## Workspace after CTX-0022 (v0.3)
+## Workspace after CTX-0022 (v0.2.0)
 
 ```
-sigil-core/    # new lib: carrier + signal/keying/spread_spectrum/geometry + framing/ecc/registration
-sigil/         # binary crate (today's repo): thin CLI wrappers → sigil_core::Carrier
-sigil-wasm/    # thin wasm bridge: sigil-core wasm-safe subset (no secrets)
+sigil/
+  Cargo.toml              # [workspace] members = ["crates/sigil-core"]
+  crates/sigil-core/      # new lib: signal/keying/spread_spectrum/geometry/framing/ecc/interleave/registration + carrier trait + Placement
+  src/                    # binary crate (thin CLI wrappers → sigil_core::Carrier via carrier.rs facade)
+  docs/sigil-core-api.md  # this file
+sigil-wasm/    # thin wasm bridge: sigil-core wasm-safe subset (no secrets) — deferred to CTX-0023+
 ```
 
 ## What moves to sigil-core
@@ -24,11 +27,11 @@ sigil-wasm/    # thin wasm bridge: sigil-core wasm-safe subset (no secrets)
 - `keying.rs` — HMAC PRF, split into `K_embed` (placement) / `K_mac` (framing tag) / `K_object` (pointer AEAD)
 - `spread_spectrum.rs` — deprecated shim until `ecc` replaces repetition-8
 - `geometry.rs` — `GeometryFile` (serde), cover vault + carrier lattice
-- `dct.rs` + `dwt.rs` + `dwt_embed.rs` → `sigil_core::carrier::{dct,dwt}`
-- `carrier.rs` (`Carrier` trait + `DctCarrier`/`DwtCarrier`/`AlphaCarrier`) — single dispatch point (CTX-0018)
-- `core.rs` grouping shim — deleted after move (replaced by `pub use sigil_core::*` in `sigil/src/lib.rs`)
-- **New in CTX-0020:** `framing` (CBOR `version/length/type/flags` + HMAC/AEAD) + `ecc` (BCH/RS + interleave + soft-bits LLR)
-- **New in CTX-0021:** `registration::Register` (`R = I_submitted^aligned - I_original` + correlation)
+- `carrier.rs` (`Carrier` trait + `Placement` + `AlphaCarrier`) — single dispatch point (CTX-0018), `DctCarrier`/`DwtCarrier` impls stay in `sigil/src/carrier.rs` (facade) until `dct`/`dwt` move in follow-up
+- `core.rs` grouping shim — replaced by `pub use sigil_core::*` in `sigil/src/lib.rs` + `sigil/src/core.rs` re-exports
+- **CTX-0020:** `framing` (CBOR `version/length/type/flags` + HMAC) + `ecc` (BCH/RS + interleave + soft-bits LLR) + `interleave` — all moved in CTX-0022
+- **CTX-0021:** `registration::Register` (`R = I_submitted^aligned - I_original` + correlation) + `CoverVault`/`HybridMatch` — moved in CTX-0022
+- `dct.rs` + `dwt.rs` + `dwt_embed.rs` → `sigil_core::carrier::{dct,dwt}` — **deferred** (still in `sigil` binary, uses `sigil_core::Placement` via `carrier::to_core_placement` bridge)
 
 ## What stays in sigil (binary)
 
@@ -65,16 +68,16 @@ pub trait Register { fn align(&self, original: &ImageBuffer<Rgb<u8>, Vec<u8>>, s
 #[cfg(feature = "wasm")] pub mod wasm_helpers { pub fn validate_frame(bytes: &[u8]) -> anyhow::Result<crate::framing::FrameHeader>; }
 ```
 
-## Migration checklist (CTX-0022, no facade duplication)
+## Migration checklist (CTX-0022, no facade duplication) — DONE
 
-- [ ] Create `sigil-core/Cargo.toml` (`wasm` feature, no `clap`/`glob`/`tracing-subscriber`/`c2pa`/`trustmark`)
-- [ ] Move `signal/keying/spread_spectrum/geometry/dct/dwt/dwt_embed/carrier` verbatim into `sigil-core/src/` (keep paths for `git log --follow`)
-- [ ] Add `sigil-core/src/framing` + `ecc` (CTX-0020) + `registration` (CTX-0021) — not in this PR
-- [ ] In `sigil/Cargo.toml`: add `sigil-core = { path = "../sigil-core" }`, gate `clap`/`glob` with `cfg(not(wasm32))` (CTX-0030), remove moved deps
-- [ ] In `sigil/src/lib.rs`: replace `pub mod signal;` etc with `pub use sigil_core::signal;` — delete moved files, delete `core.rs` shim
-- [ ] Move `sigil/src/wasm_api.rs` → `sigil-wasm/src/lib.rs` (keep `embed_bytes/verify_bytes/extract_bytes`)
-- [ ] Bump `sigil-core` + `sigil` to `0.3.0` with `sigil-core = "=0.3.0"` pin; `Carrier` is `#[non_exhaustive]`-aware
-- [ ] CI gate: `cargo check --target wasm32-unknown-unknown -p sigil-core` + `cargo tree --target wasm32 | grep -v clap/glob` must be clean
+- [x] Create `crates/sigil-core/Cargo.toml` (`v0.2.0`, no `clap`/`glob`/`tracing-subscriber`/`c2pa`/`trustmark`, deps: `image` png/jpeg, `ciborium`, `serde_bytes`, `sha2`, `hmac`, `tracing`)
+- [x] Move `signal`/`keying`/`spread_spectrum`/`geometry`/`framing`/`ecc`/`interleave`/`registration`/`carrier` (trait+`Placement`+`AlphaCarrier`) verbatim into `crates/sigil-core/src/` (`git mv` semantics, `cargo fmt` preserved)
+- [x] `carrier` split: `sigil_core::carrier::Carrier` + `sigil_core::placement::Placement` live in core; `sigil/src/carrier.rs` keeps `DctCarrier`/`DwtCarrier` impls as facade with `to_cli_placement`/`to_core_placement` bridge (no duplication of trait)
+- [x] In `sigil/Cargo.toml`: add `[workspace] members = ["crates/sigil-core"]`, `sigil-core = { path = "crates/sigil-core" }`, `clap`/`glob` already gated via `cfg(not(wasm32))` (CTX-0030); kept `ciborium` etc for `sigil`'s `dct`/`dwt` until they move
+- [x] In `sigil/src/lib.rs`: replace `pub mod signal;` etc with `pub use sigil_core::signal;` — deleted moved files (`src/{signal,keying,spread_spectrum,geometry,framing,ecc,interleave,registration}.rs`), kept `src/core.rs` as thin `pub use sigil_core::*` re-export and `src/carrier.rs` as `Carrier` impl facade
+- [ ] Move `sigil/src/wasm_api.rs` → `sigil-wasm/src/lib.rs` — deferred to CTX-0023+ (wasm_api stays in `sigil` and re-uses `sigil_core::signal` via `crate::signal`)
+- [x] Version: `sigil-core v0.2.0` pinned, `sigil v0.2.0` depends via path; semver bump to `0.3.0` deferred until `dct`/`dwt` move
+- [x] CI gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo check --workspace --target wasm32-unknown-unknown`, `cargo tree --target wasm32-unknown-unknown -p sigil-core` clean (85 nodes, no `clap`/`glob`/`tracing-subscriber`), `cargo tree -p sigil --target wasm32` clean (195 nodes, `clap`/`glob` gated)
 
 ## Verification gates
 

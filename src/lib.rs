@@ -11,24 +11,24 @@ pub mod dwt;
 pub mod dwt_embed;
 pub mod embed;
 pub mod extract;
-pub mod geometry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod info;
-pub mod keying;
 #[cfg(feature = "learned")]
 pub mod learned;
-pub mod signal;
-pub mod spread_spectrum;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod strip;
 pub mod verify;
 pub mod wasm_api;
-// ── Refactor CTX-0018: carrier trait + core group (single crate, no new crates) ──
+// ── CTX-0018: carrier trait + core group ──
 pub mod carrier;
 pub mod core;
-// ── CTX-0020: framing + ECC + interleave + soft-bits ──
-pub mod ecc;
-pub mod framing;
-pub mod interleave;
-// ── CTX-0021: registered-residual original-assisted extractor ──
-pub mod registration;
+// ── CTX-0022: sigil-core extraction (re-exports) ──
+pub use sigil_core::ecc;
+pub use sigil_core::framing;
+pub use sigil_core::geometry;
+pub use sigil_core::interleave;
+pub use sigil_core::keying;
+pub use sigil_core::placement;
+pub use sigil_core::registration;
+pub use sigil_core::signal;
+pub use sigil_core::spread_spectrum;
