@@ -114,7 +114,8 @@ fn info_dwt(img: &DynamicImage, w: u32, h: u32, geometry_path: Option<&Path>) ->
         }
     };
 
-    let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
+    let metrics =
+        crate::dwt_embed::verify(&rgb, &geometry, &crate::cli::PlacementStrategy::Skeleton)?;
 
     println!("Mode:                 dwt");
     println!("Image size:           {}×{} ({} pixels)", w, h, w * h);

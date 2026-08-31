@@ -91,7 +91,11 @@ pub fn verify_bytes(src: &[u8], mode: &str) -> Result<bool> {
         EmbedMode::Dwt => {
             let rgb = img.to_rgb8();
             let geometry = crate::verify::extract_geometry_from_image(&img)?;
-            let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
+            let metrics = crate::dwt_embed::verify(
+                &rgb,
+                &geometry,
+                &crate::cli::PlacementStrategy::Skeleton,
+            )?;
             Ok(metrics.mean_signal >= 4.0
                 || (metrics.detection_rate >= 0.8 && metrics.mean_signal >= 2.0))
         }
