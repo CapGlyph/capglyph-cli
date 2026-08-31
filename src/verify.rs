@@ -1,10 +1,16 @@
-use anyhow::{Context, Result};
-use tracing::info;
-
-use crate::cli::{EmbedMode, VerifyArgs};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::cli::EmbedMode;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::cli::VerifyArgs;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::GeometryFile;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::signal::SignalMetrics;
+use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing::info;
 
 /// Exit codes
 pub const EXIT_PRESENT: i32 = 0;
@@ -17,6 +23,7 @@ pub const SECRET_MEAN_THRESHOLD: f64 = 4.0;
 ///
 /// Returns `Ok(true)` if watermark is present, `Ok(false)` if absent.
 /// The caller is responsible for mapping this to a process exit code.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(args: &VerifyArgs) -> Result<bool> {
     info!("Verifying watermark in: {:?}", args.input);
 
@@ -70,6 +77,7 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
 }
 
 /// Alpha-channel verification: check semi-transparent pixel fraction.
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     // If the colour type has no alpha channel the watermark is absent by definition.
     let has_alpha = matches!(
@@ -133,6 +141,7 @@ fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 }
 
 /// DCT-domain verification: check if marked blocks still have offset in target coefficient.
+#[cfg(not(target_arch = "wasm32"))]
 fn sampled_blocks(blocks: &HashSet<(u32, u32)>, limit: usize) -> Vec<(u32, u32)> {
     let mut sorted: Vec<_> = blocks.iter().copied().collect();
     sorted.sort_unstable();
@@ -144,6 +153,7 @@ fn sampled_blocks(blocks: &HashSet<(u32, u32)>, limit: usize) -> Vec<(u32, u32)>
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let rgb = img.to_rgb8();
     let (iw, ih) = rgb.dimensions();
@@ -327,6 +337,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 }
 
 /// DWT-domain verification: check LH sub-band coefficient bias at geometry positions.
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let geometry = match &args.geometry {
         Some(p) => {
@@ -437,7 +448,7 @@ pub fn extract_geometry_from_image(
 /// XORed back with the HMAC keystream before comparing, which also proves
 /// attribution (an attacker without the key cannot forge a valid keyed
 /// payload for a known ID).
-#[cfg(feature = "learned")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "learned"))]
 fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let rid = args
         .recipient_id
@@ -482,7 +493,7 @@ fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> 
     Ok(present)
 }
 
-#[cfg(not(feature = "learned"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "learned")))]
 fn verify_learned(_img: &image::DynamicImage, _args: &VerifyArgs) -> Result<bool> {
     anyhow::bail!(
         "learned mode requires the `learned` cargo feature (build with --features learned)"

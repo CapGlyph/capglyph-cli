@@ -1,10 +1,19 @@
+#[cfg(not(target_arch = "wasm32"))]
 use clap::Parser;
+#[cfg(not(target_arch = "wasm32"))]
 use tracing::Level;
+#[cfg(not(target_arch = "wasm32"))]
 use tracing_subscriber::FmtSubscriber;
 
+#[cfg(not(target_arch = "wasm32"))]
 use sigil::cli::{Cli, Commands};
+#[cfg(not(target_arch = "wasm32"))]
 use sigil::{batch, embed, extract, info, strip, verify};
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 

@@ -3,13 +3,17 @@
 //! Reads the spread-spectrum bit stream embedded during `sigil embed --recipient-id`
 //! and reconstructs the original ID string.
 
-use anyhow::{Context, Result};
-use tracing::info;
-
+#[cfg(not(target_arch = "wasm32"))]
 use crate::cli::ExtractArgs;
+#[cfg(not(target_arch = "wasm32"))]
+use anyhow::Context;
+use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing::info;
 
 /// Entry point for the `extract` subcommand.
 /// Returns the decoded recipient ID string.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(args: &ExtractArgs) -> Result<String> {
     info!("Extracting recipient ID from: {:?}", args.input);
 
@@ -34,7 +38,7 @@ pub fn run(args: &ExtractArgs) -> Result<String> {
 /// Learned-mode extraction: TrustMark decode → bitstring → ASCII bytes.
 /// With `--key`, the payload is XOR-decrypted with the HMAC keystream
 /// before byte packing (payload was keyed at embed time).
-#[cfg(feature = "learned")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "learned"))]
 fn extract_from_learned(img: image::DynamicImage, args: &ExtractArgs) -> Result<String> {
     let dir = crate::learned::model_dir(args.model_dir.as_deref());
     let bits = crate::learned::decode(img.clone(), &dir)?;
@@ -63,7 +67,7 @@ fn extract_from_learned(img: image::DynamicImage, args: &ExtractArgs) -> Result<
     Ok(s)
 }
 
-#[cfg(not(feature = "learned"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "learned")))]
 fn extract_from_learned(_img: image::DynamicImage, _args: &ExtractArgs) -> Result<String> {
     anyhow::bail!(
         "learned mode requires the `learned` cargo feature (build with --features learned)"
