@@ -159,6 +159,69 @@ pub struct IssueResponse {
     pub token_hash_hex: String,
 }
 
+// ── Message Objects (CTX-0024 pointer mode) ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MessageObject {
+    pub id: Uuid,
+    pub capability_id: Vec<u8>,   // 16-byte bearer token (raw)
+    pub capability_hash: Vec<u8>, // SHA-256 of capability_id for indexed lookup
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,               // 12 bytes ChaCha20Poly1305
+    pub tag: Vec<u8>,                 // 16 bytes
+    pub content_key: Option<Vec<u8>>, // 32 bytes, stored for offline re-derive / audit
+    pub policy: serde_json::Value,
+    pub owner_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewMessageObject {
+    pub capability_id: [u8; 16],
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,
+    pub tag: Vec<u8>,
+    pub content_key: Option<Vec<u8>>,
+    pub policy: serde_json::Value,
+    pub owner_id: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreMessageRequest {
+    pub plaintext_base64: String, // base64 of plaintext (client encrypts locally, but server stores ciphertext)
+    // Alternatively raw ciphertext fields for direct store
+    pub ciphertext_base64: Option<String>,
+    pub nonce_base64: Option<String>,
+    pub tag_base64: Option<String>,
+    pub policy: Option<serde_json::Value>,
+    pub owner_id: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreMessageResponse {
+    pub object_id: Uuid,
+    pub capability_id: String, // base64url
+    pub capability_hash_hex: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveMessageRequest {
+    pub capability_id: String, // base64url 16 bytes
+    pub actor_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveMessageResponse {
+    pub object_id: Uuid,
+    pub ciphertext_base64: String,
+    pub nonce_base64: String,
+    pub tag_base64: String,
+    pub policy: serde_json::Value,
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 pub fn parse_token_id(s: &str) -> anyhow::Result<[u8; 16]> {
@@ -203,4 +266,12 @@ pub fn sha256(data: &[u8]) -> Vec<u8> {
     let mut h = Sha256::new();
     h.update(data);
     h.finalize().to_vec()
+}
+
+pub fn parse_capability_id(s: &str) -> anyhow::Result<[u8; 16]> {
+    parse_token_id(s)
+}
+
+pub fn capability_id_to_base64url(cap: &[u8; 16]) -> String {
+    token_id_to_base64url(cap)
 }

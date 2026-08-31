@@ -82,6 +82,10 @@ pub enum Commands {
     Batch(BatchArgs),
     /// Extract embedded recipient ID from watermarked image
     Extract(ExtractArgs),
+    /// Pointer-mode stego: image → capability → encrypted object (CTX-0024)
+    Pointer(PointerArgs),
+    /// Message encryption via pointer carrier (CTX-0024)
+    Message(MessageArgs),
     /// Download learned-mode ONNX models (TrustMark) into the model dir
     #[cfg(feature = "learned")]
     FetchModels(FetchModelsArgs),
@@ -435,6 +439,211 @@ pub enum BatchOperation {
 pub enum OutputFormat {
     Png,
     Jpg,
+}
+
+// ─── pointer (CTX-0024) ─────────────────────────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct PointerArgs {
+    #[command(subcommand)]
+    pub command: PointerCommand,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Subcommand, Debug)]
+pub enum PointerCommand {
+    /// Embed capability (pointer-online) into image: plaintext → AEAD → server → carrier
+    Embed(PointerEmbedArgs),
+    /// Extract capability from image → server resolve → decrypt
+    Extract(PointerExtractArgs),
+    /// Offline: embed object_id+content_key for direct decrypt (1024px+ only)
+    OfflineEmbed(PointerOfflineEmbedArgs),
+    /// Offline extract
+    OfflineExtract(PointerOfflineExtractArgs),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct PointerEmbedArgs {
+    /// Cover image (input)
+    pub input: PathBuf,
+
+    /// Output stego image
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    /// Plaintext file to encrypt (if omitted, reads from stdin or --plaintext)
+    #[arg(long)]
+    pub plaintext_file: Option<PathBuf>,
+
+    /// Plaintext string (alternative to file)
+    #[arg(long)]
+    pub plaintext: Option<String>,
+
+    /// Carrier mode (dct/dwt)
+    #[arg(long, default_value = "dct")]
+    pub mode: EmbedMode,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
+    /// Server DB path (SQLite file, created if missing)
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    /// Owner actor ID (UUID for authz)
+    #[arg(long)]
+    pub owner_id: Option<String>,
+
+    /// Policy JSON (e.g. '{"allow":["uuid"]}')
+    #[arg(long)]
+    pub policy: Option<String>,
+
+    /// Secret for K_mac derivation (optional, defaults to test key)
+    #[arg(long)]
+    pub key: Option<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct PointerExtractArgs {
+    /// Stego image to extract from
+    pub input: PathBuf,
+
+    #[arg(long, default_value = "dct")]
+    pub mode: EmbedMode,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    /// Actor ID for authorization (must match owner or allow list)
+    #[arg(long)]
+    pub actor_id: Option<String>,
+
+    /// Output plaintext file (if omitted, prints to stdout)
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    #[arg(long)]
+    pub key: Option<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct PointerOfflineEmbedArgs {
+    pub input: PathBuf,
+
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    #[arg(long)]
+    pub plaintext_file: Option<PathBuf>,
+
+    #[arg(long)]
+    pub plaintext: Option<String>,
+
+    #[arg(long, default_value = "dwt")]
+    pub mode: EmbedMode,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    #[arg(long)]
+    pub owner_id: Option<String>,
+
+    #[arg(long)]
+    pub policy: Option<String>,
+
+    #[arg(long)]
+    pub key: Option<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct PointerOfflineExtractArgs {
+    pub input: PathBuf,
+
+    #[arg(long, default_value = "dwt")]
+    pub mode: EmbedMode,
+
+    #[arg(long, default_value = "skeleton")]
+    pub placement: PlacementStrategy,
+
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    #[arg(long)]
+    pub actor_id: Option<String>,
+
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
+    #[arg(long)]
+    pub key: Option<String>,
+}
+
+// ─── message (CTX-0024) ─────────────────────────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct MessageArgs {
+    #[command(subcommand)]
+    pub command: MessageCommand,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Subcommand, Debug)]
+pub enum MessageCommand {
+    /// Encrypt and store (alias for pointer embed)
+    Encrypt(PointerEmbedArgs),
+    /// Extract and decrypt (alias for pointer extract)
+    Decrypt(PointerExtractArgs),
+    /// Direct store without carrier (server only)
+    Store(MessageStoreArgs),
+    /// Direct resolve without carrier
+    Resolve(MessageResolveArgs),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct MessageStoreArgs {
+    #[arg(long)]
+    pub plaintext_file: Option<PathBuf>,
+
+    #[arg(long)]
+    pub plaintext: Option<String>,
+
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    #[arg(long)]
+    pub owner_id: Option<String>,
+
+    #[arg(long)]
+    pub policy: Option<String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct MessageResolveArgs {
+    #[arg(long)]
+    pub capability_id: String,
+
+    #[arg(long)]
+    pub db: Option<PathBuf>,
+
+    #[arg(long)]
+    pub actor_id: Option<String>,
+
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
 }
 
 // ─── extract ─────────────────────────────────────────────────────────────────

@@ -12,8 +12,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use base64::Engine as _;
+
 use crate::error::ServerError;
-use crate::models::{ConsumeResponse, IssueRequest, IssueResponse, RevokeRequest, VerifyResponse};
+use crate::models::{
+    ConsumeResponse, IssueRequest, IssueResponse, MessageObject, ResolveMessageResponse,
+    RevokeRequest, StoreMessageResponse, VerifyResponse,
+};
 use crate::service::Service;
 
 // ── Shared state ──────────────────────────────────────────────────────────────
@@ -141,6 +146,99 @@ async fn handle_issue(
     state.svc.issue(req).map(Json).map_err(map_err)
 }
 
+// ── Message objects (CTX-0024) ────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StoreMessageBody {
+    pub plaintext_base64: Option<String>,
+    pub ciphertext_base64: Option<String>,
+    pub nonce_base64: Option<String>,
+    pub tag_base64: Option<String>,
+    pub owner_id: Option<Uuid>,
+    pub policy: Option<serde_json::Value>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+async fn handle_store_message(
+    State(state): State<AppState>,
+    Json(body): Json<StoreMessageBody>,
+) -> Result<Json<StoreMessageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    // Two modes: if plaintext_base64 provided, encrypt server-side; else raw ciphertext
+    if let Some(pt_b64) = body.plaintext_base64 {
+        let pt = base64::engine::general_purpose::STANDARD
+            .decode(pt_b64)
+            .map_err(|e| {
+                map_err(ServerError::Internal(format!(
+                    "invalid plaintext_base64: {e}"
+                )))
+            })?;
+        let policy = body.policy.unwrap_or_else(|| serde_json::json!({}));
+        // encrypt_and_store generates key/nonce internally
+        state
+            .svc
+            .encrypt_and_store(&pt, policy, body.owner_id, body.expires_at)
+            .map(|(resp, _, _)| Json(resp))
+            .map_err(map_err)
+    } else {
+        let ct = body
+            .ciphertext_base64
+            .ok_or_else(|| map_err(ServerError::Internal("missing ciphertext_base64".into())))?;
+        let nonce_b64 = body
+            .nonce_base64
+            .ok_or_else(|| map_err(ServerError::Internal("missing nonce_base64".into())))?;
+        let tag_b64 = body
+            .tag_base64
+            .ok_or_else(|| map_err(ServerError::Internal("missing tag_base64".into())))?;
+        let ct_bytes = base64::engine::general_purpose::STANDARD
+            .decode(ct)
+            .map_err(|e| map_err(ServerError::Internal(format!("invalid ciphertext: {e}"))))?;
+        let nonce = base64::engine::general_purpose::STANDARD
+            .decode(nonce_b64)
+            .map_err(|e| map_err(ServerError::Internal(format!("invalid nonce: {e}"))))?;
+        let tag = base64::engine::general_purpose::STANDARD
+            .decode(tag_b64)
+            .map_err(|e| map_err(ServerError::Internal(format!("invalid tag: {e}"))))?;
+        let policy = body.policy.unwrap_or_else(|| serde_json::json!({}));
+        state
+            .svc
+            .store_message(
+                ct_bytes,
+                nonce,
+                tag,
+                None,
+                policy,
+                body.owner_id,
+                body.expires_at,
+            )
+            .map(Json)
+            .map_err(map_err)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveMessageBody {
+    pub capability_id: String,
+    pub actor_id: Option<Uuid>,
+}
+
+async fn handle_resolve_message(
+    State(state): State<AppState>,
+    Json(body): Json<ResolveMessageBody>,
+) -> Result<Json<ResolveMessageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    state
+        .svc
+        .resolve_message(&body.capability_id, body.actor_id)
+        .map(Json)
+        .map_err(map_err)
+}
+
+async fn handle_get_message(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MessageObject>, (StatusCode, Json<serde_json::Value>)> {
+    state.svc.get_message_object(&id).map(Json).map_err(map_err)
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn router(svc: Service) -> Router {
@@ -151,6 +249,9 @@ pub fn router(svc: Service) -> Router {
         .route("/v1/credentials/consume", post(handle_consume))
         .route("/v1/credentials/:id", get(handle_get))
         .route("/v1/credentials/:id/revoke", post(handle_revoke))
+        .route("/v1/messages", post(handle_store_message))
+        .route("/v1/messages/resolve", post(handle_resolve_message))
+        .route("/v1/messages/:id", get(handle_get_message))
         .with_state(state)
 }
 

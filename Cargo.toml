@@ -60,6 +60,11 @@ tracing = "0.1"
 sha2 = "0.11.0"
 hmac = "0.13.0"
 digest = "0.11.3"
+chacha20poly1305 = "0.11"
+aead = "0.6"
+base64 = "0.22"
+hex = "0.4"
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 # Learned watermark (TrustMark ONNX, optional — pulls in ONNX Runtime)
 trustmark = { version = "0.2", optional = true }
@@ -80,6 +85,9 @@ time = { version = "0.3", features = ["formatting"], optional = true }
 clap = { version = "4.5", features = ["derive"] }
 glob = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+capglyph-server = { path = "crates/capglyph-server" }
+rand = "0.8"
+uuid = { version = "1.8", features = ["v4", "serde"] }
 
 [features]
 default = []

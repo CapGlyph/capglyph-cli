@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 use crate::error::{Result, ServerError};
 use crate::models::{
-    sha256, AuditEvent, Cover, Credential, CredentialConsumption, NewAuditEvent, NewCover,
-    NewCredential,
+    sha256, AuditEvent, Cover, Credential, CredentialConsumption, MessageObject, NewAuditEvent,
+    NewCover, NewCredential, NewMessageObject,
 };
 
 // ── Schema ────────────────────────────────────────────────────────────────────
@@ -75,6 +75,23 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_object ON audit_events(object_id);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_events(event_type);
+
+-- CTX-0024 pointer mode: message_objects (capability → encrypted object)
+CREATE TABLE IF NOT EXISTS message_objects (
+    id              TEXT PRIMARY KEY,
+    capability_id   BLOB NOT NULL UNIQUE,
+    capability_hash BLOB NOT NULL UNIQUE,
+    ciphertext      BLOB NOT NULL,
+    nonce           BLOB NOT NULL,
+    tag             BLOB NOT NULL,
+    content_key     BLOB,
+    policy          TEXT NOT NULL,
+    owner_id        TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    expires_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_message_objects_cap_hash ON message_objects(capability_hash);
+CREATE INDEX IF NOT EXISTS idx_message_objects_owner ON message_objects(owner_id);
 "#;
 
 // ── Db handle ─────────────────────────────────────────────────────────────────
@@ -852,6 +869,238 @@ impl Db {
                 out.push(row?);
             }
             Ok(out)
+        })
+    }
+
+    // ── Message Objects (CTX-0024) ────────────────────────────────────────────
+
+    pub fn create_message_object(&self, nm: NewMessageObject) -> Result<MessageObject> {
+        let id = Uuid::new_v4();
+        let cap_hash = sha256(&nm.capability_id);
+        let now = Utc::now();
+        let policy_str = serde_json::to_string(&nm.policy).unwrap();
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO message_objects (id, capability_id, capability_hash, ciphertext, nonce, tag, content_key, policy, owner_id, created_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    id.to_string(),
+                    nm.capability_id.to_vec(),
+                    cap_hash,
+                    nm.ciphertext,
+                    nm.nonce,
+                    nm.tag,
+                    nm.content_key,
+                    policy_str,
+                    nm.owner_id.map(|u| u.to_string()),
+                    now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    nm.expires_at.map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                ],
+            )?;
+            Ok(())
+        })?;
+        // Audit
+        let _ = self.insert_audit(NewAuditEvent {
+            event_type: "message_object.created".into(),
+            object_id: Some(id),
+            actor_id: nm.owner_id,
+            event_data: Some(serde_json::json!({
+                "capability_hash": hex::encode(&cap_hash),
+                "policy": nm.policy,
+            })),
+        });
+        self.get_message_object(&id)?
+            .ok_or_else(|| ServerError::Internal("message object insert failed".into()))
+    }
+
+    pub fn get_message_object(&self, id: &Uuid) -> Result<Option<MessageObject>> {
+        self.with_conn(|conn| Self::get_message_object_inner(conn, id))
+    }
+
+    fn get_message_object_inner(conn: &Connection, id: &Uuid) -> Result<Option<MessageObject>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, capability_id, capability_hash, ciphertext, nonce, tag, content_key, policy, owner_id, created_at, expires_at FROM message_objects WHERE id = ?1",
+        )?;
+        let row = stmt
+            .query_row(params![id.to_string()], |r| {
+                Ok(MessageObject {
+                    id: Uuid::from_str(&r.get::<_, String>(0)?).unwrap(),
+                    capability_id: r.get(1)?,
+                    capability_hash: r.get(2)?,
+                    ciphertext: r.get(3)?,
+                    nonce: r.get(4)?,
+                    tag: r.get(5)?,
+                    content_key: r.get(6)?,
+                    policy: serde_json::from_str(&r.get::<_, String>(7)?).unwrap(),
+                    owner_id: r
+                        .get::<_, Option<String>>(8)?
+                        .map(|s| Uuid::from_str(&s).unwrap()),
+                    created_at: r.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
+                    expires_at: r
+                        .get::<_, Option<String>>(10)?
+                        .map(|s| s.parse::<DateTime<Utc>>().unwrap()),
+                })
+            })
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn get_message_object_by_capability_id(
+        &self,
+        capability_id: &[u8; 16],
+    ) -> Result<Option<MessageObject>> {
+        let cap_hash = sha256(capability_id);
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, capability_id, capability_hash, ciphertext, nonce, tag, content_key, policy, owner_id, created_at, expires_at FROM message_objects WHERE capability_hash = ?1",
+            )?;
+            let row = stmt
+                .query_row(params![cap_hash], |r| {
+                    Ok(MessageObject {
+                        id: Uuid::from_str(&r.get::<_, String>(0)?).unwrap(),
+                        capability_id: r.get(1)?,
+                        capability_hash: r.get(2)?,
+                        ciphertext: r.get(3)?,
+                        nonce: r.get(4)?,
+                        tag: r.get(5)?,
+                        content_key: r.get(6)?,
+                        policy: serde_json::from_str(&r.get::<_, String>(7)?).unwrap(),
+                        owner_id: r
+                            .get::<_, Option<String>>(8)?
+                            .map(|s| Uuid::from_str(&s).unwrap()),
+                        created_at: r.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
+                        expires_at: r
+                            .get::<_, Option<String>>(10)?
+                            .map(|s| s.parse::<DateTime<Utc>>().unwrap()),
+                    })
+                })
+                .optional()?;
+            Ok(row)
+        })
+    }
+
+    pub fn get_message_object_by_capability_hash(
+        &self,
+        cap_hash: &[u8],
+    ) -> Result<Option<MessageObject>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, capability_id, capability_hash, ciphertext, nonce, tag, content_key, policy, owner_id, created_at, expires_at FROM message_objects WHERE capability_hash = ?1",
+            )?;
+            let row = stmt
+                .query_row(params![cap_hash], |r| {
+                    Ok(MessageObject {
+                        id: Uuid::from_str(&r.get::<_, String>(0)?).unwrap(),
+                        capability_id: r.get(1)?,
+                        capability_hash: r.get(2)?,
+                        ciphertext: r.get(3)?,
+                        nonce: r.get(4)?,
+                        tag: r.get(5)?,
+                        content_key: r.get(6)?,
+                        policy: serde_json::from_str(&r.get::<_, String>(7)?).unwrap(),
+                        owner_id: r
+                            .get::<_, Option<String>>(8)?
+                            .map(|s| Uuid::from_str(&s).unwrap()),
+                        created_at: r.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
+                        expires_at: r
+                            .get::<_, Option<String>>(10)?
+                            .map(|s| s.parse::<DateTime<Utc>>().unwrap()),
+                    })
+                })
+                .optional()?;
+            Ok(row)
+        })
+    }
+
+    /// Resolve with authorization (no IDOR). Checks policy before returning ciphertext.
+    /// Policy semantics: if policy has "owner_id" == actor_id or "allow" contains actor_id, authorized.
+    /// If policy is empty or has no owner, treats as bearer (any holder of capability_id is authorized).
+    /// Also checks expiry.
+    pub fn resolve_message_object(
+        &self,
+        capability_id: &[u8; 16],
+        actor_id: Option<Uuid>,
+    ) -> Result<MessageObject> {
+        let obj = self
+            .get_message_object_by_capability_id(capability_id)?
+            .ok_or_else(|| ServerError::NotFound("message object not found".into()))?;
+        // Expiry check
+        if let Some(exp) = obj.expires_at {
+            if Utc::now() >= exp {
+                return Err(ServerError::Expired);
+            }
+        }
+        // Authorization (no IDOR)
+        // If owner_id is set on row, require actor_id matches owner or is in allowed list
+        // Policy JSON may contain {"allow": ["uuid1", ...]} or {"owner_id": "..."}
+        // For MVP, enforce: if obj.owner_id is Some, actor must be that owner or in policy allow
+        if let Some(owner) = obj.owner_id {
+            match actor_id {
+                Some(actor) if actor == owner => {} // owner always allowed
+                Some(actor) => {
+                    // Check policy allow list
+                    if let Some(allow) = obj.policy.get("allow").and_then(|v| v.as_array()) {
+                        let allowed = allow.iter().any(|v| v.as_str() == Some(&actor.to_string()));
+                        if !allowed {
+                            return Err(ServerError::Unauthorized(format!(
+                                "actor {} not authorized for object {}",
+                                actor, obj.id
+                            )));
+                        }
+                    } else {
+                        // No allow list => only owner allowed (fail closed)
+                        return Err(ServerError::Unauthorized(format!(
+                            "actor {} not owner {}",
+                            actor, owner
+                        )));
+                    }
+                }
+                None => {
+                    return Err(ServerError::Unauthorized(
+                        "missing actor_id for owner-restricted object".into(),
+                    ))
+                }
+            }
+        } else {
+            // No owner -> check policy allow if present, else bearer (any actor allowed)
+            if let Some(allow) = obj.policy.get("allow").and_then(|v| v.as_array()) {
+                // If allow list present but empty, fail
+                if allow.is_empty() {
+                    return Err(ServerError::Unauthorized("empty allow list".into()));
+                }
+                if let Some(actor) = actor_id {
+                    let allowed = allow.iter().any(|v| v.as_str() == Some(&actor.to_string()));
+                    if !allowed {
+                        return Err(ServerError::Unauthorized(format!(
+                            "actor {} not in allow list",
+                            actor
+                        )));
+                    }
+                } else {
+                    return Err(ServerError::Unauthorized("actor required by policy".into()));
+                }
+            }
+            // Bearer: no owner, no allow list => any holder of capability is authorized (no IDOR via unguessable 128b)
+        }
+        // Audit successful resolve (do not log raw capability)
+        let _ = self.insert_audit(NewAuditEvent {
+            event_type: "message_object.resolved".into(),
+            object_id: Some(obj.id),
+            actor_id,
+            event_data: Some(serde_json::json!({
+                "capability_hash": hex::encode(sha256(capability_id)),
+            })),
+        });
+        Ok(obj)
+    }
+
+    pub fn delete_message_object(&self, id: &Uuid) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "DELETE FROM message_objects WHERE id = ?1",
+                params![id.to_string()],
+            )?;
+            Ok(())
         })
     }
 }
