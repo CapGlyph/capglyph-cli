@@ -124,6 +124,7 @@ mod tests {
     use super::SignalMetrics;
 
     #[test]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     fn v2_alpha_requires_minimum_signal_count() {
         let mut pixels = vec![255u8; 4 * 100];
         for pixel in pixels.chunks_exact_mut(4).take(15) {
