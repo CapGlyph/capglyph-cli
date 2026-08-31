@@ -6,6 +6,8 @@ pub mod c2pa;
 #[cfg(feature = "c2pa")]
 pub mod c2pa_cli;
 pub mod cli;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod conformance;
 pub mod dct;
 pub mod dwt;
 pub mod dwt_embed;
