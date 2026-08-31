@@ -75,6 +75,39 @@ pub struct DwtSignalMetrics {
     pub mean_signal: f32,
 }
 
+impl DwtSignalMetrics {
+    /// Primary DWT presence predicate (v1): `mean >= thr || (rate>=0.8 && mean>=2.0)`.
+    ///
+    /// Single source of truth — `carrier.rs`, `verify.rs`, and `wasm_api.rs`
+    /// all delegate here. Mirrors `DctSignalMetrics::is_present` shape.
+    pub fn is_present(&self, threshold: f64) -> bool {
+        Self::predicate(f64::from(self.mean_signal), self.detection_rate, threshold)
+    }
+
+    /// V2 predicate: `mean >= thr` only (no secondary gate).
+    pub fn is_present_v2(&self, threshold: f64) -> bool {
+        Self::predicate_v2(f64::from(self.mean_signal), threshold)
+    }
+
+    /// Mean signal as `f64` for threshold comparisons.
+    pub fn mean_signal_value(&self) -> f64 {
+        f64::from(self.mean_signal)
+    }
+
+    /// Canonical v1 predicate for a raw `(mean, rate)` pair — used when
+    /// metrics struct is not available (kept for symmetry with DCT).
+    #[inline]
+    pub fn predicate(mean_signal: f64, detection_rate: f64, threshold: f64) -> bool {
+        mean_signal >= threshold || (detection_rate >= 0.8 && mean_signal >= 2.0)
+    }
+
+    /// Canonical v2 predicate.
+    #[inline]
+    pub fn predicate_v2(mean_signal: f64, threshold: f64) -> bool {
+        mean_signal >= threshold
+    }
+}
+
 // ── Embed ─────────────────────────────────────────────────────────────────────
 
 /// Embed a DWT watermark into the RGB image in-place.

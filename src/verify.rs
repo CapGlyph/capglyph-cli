@@ -289,7 +289,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 
     let mean_signal = coeff_sum / sample_size as f64;
     let detection_rate = marked_count as f64 / sample_size as f64;
-    let present = mean_signal >= args.mean_threshold;
+    let present = crate::dct::DctSignalMetrics::predicate(mean_signal, args.mean_threshold);
 
     if present {
         println!("WATERMARK PRESENT");
@@ -359,10 +359,9 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     };
 
     let present = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
-        metrics.mean_signal as f64 >= args.mean_threshold
+        metrics.is_present_v2(args.mean_threshold)
     } else {
-        metrics.mean_signal as f64 >= args.mean_threshold
-            || (metrics.detection_rate >= 0.8 && metrics.mean_signal as f64 >= 2.0)
+        metrics.is_present(args.mean_threshold)
     };
 
     if present {
