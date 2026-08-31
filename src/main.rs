@@ -6,9 +6,9 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 #[cfg(not(target_arch = "wasm32"))]
-use capglyph::cli::{Cli, Commands};
+use capglyph::cli::{Cli, Commands, ConformanceCommand};
 #[cfg(not(target_arch = "wasm32"))]
-use capglyph::{batch, embed, extract, info, pointer, strip, verify};
+use capglyph::{batch, conformance, embed, extract, info, pointer, strip, verify};
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
@@ -56,6 +56,9 @@ fn main() -> anyhow::Result<()> {
             capglyph::cli::MessageCommand::Decrypt(a) => pointer::run_pointer_extract(a)?,
             capglyph::cli::MessageCommand::Store(a) => pointer::run_message_store(a)?,
             capglyph::cli::MessageCommand::Resolve(a) => pointer::run_message_resolve(a)?,
+        },
+        Commands::Conformance(args) => match &args.command {
+            ConformanceCommand::Test(t) => conformance::run(t)?,
         },
         #[cfg(feature = "learned")]
         Commands::FetchModels(args) => {

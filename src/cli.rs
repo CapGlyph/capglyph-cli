@@ -86,6 +86,8 @@ pub enum Commands {
     Pointer(PointerArgs),
     /// Message encryption via pointer carrier (CTX-0024)
     Message(MessageArgs),
+    /// Conformance harness for CapGlyph spec & test vectors
+    Conformance(ConformanceArgs),
     /// Download learned-mode ONNX models (TrustMark) into the model dir
     #[cfg(feature = "learned")]
     FetchModels(FetchModelsArgs),
@@ -677,4 +679,36 @@ pub struct ExtractArgs {
     /// Required when embed used --key.
     #[arg(long)]
     pub key: Option<String>,
+}
+
+// ─── conformance ──────────────────────────────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct ConformanceArgs {
+    #[command(subcommand)]
+    pub command: ConformanceCommand,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Subcommand, Debug)]
+pub enum ConformanceCommand {
+    /// Validate CapGlyph test vectors (spec v1.0.0, 1024 fixtures)
+    Test(ConformanceTestArgs),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Args, Debug)]
+pub struct ConformanceTestArgs {
+    /// Path to vectors directory or manifest.json (e.g. ../capglyph-test-vectors/vectors or manifest.json)
+    #[arg(long, default_value = "vectors")]
+    pub vectors: PathBuf,
+
+    /// Verbose: print per-vector result
+    #[arg(long)]
+    pub verbose: bool,
+
+    /// Write JSON report to this path
+    #[arg(long)]
+    pub json_report: Option<PathBuf>,
 }
