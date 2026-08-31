@@ -9,6 +9,10 @@ keywords = ["watermark", "forensics", "image", "security", "tracing"]
 categories = ["command-line-utilities", "multimedia::images"]
 readme = "README.md"
 
+[workspace]
+members = ["crates/capglyph-server"]
+resolver = "2"
+
 [lib]
 name = "capglyph"
 path = "src/lib.rs"
