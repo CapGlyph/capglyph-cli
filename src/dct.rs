@@ -539,6 +539,105 @@ pub fn extract_coded_bits_soft_with_hint(
     Ok(soft)
 }
 
+/// CTX-0021: Residual soft extraction `R = I_aligned − I_original`.
+///
+/// Uses the server's original to cancel host interference. The stable seed is
+/// taken directly from `original` via `stable_seed(original)` (the embed-time
+/// seed), not decoded from magic sync blocks — this is the strong path. The
+/// same keyed pair lattice as `extract_coded_bits_soft_with_hint` is used, but
+/// coefficients are read from the pixel residual `R` (DCT of `aligned−original`)
+/// and differenced as `coeffA − coeffB` to produce soft bits.
+///
+/// If `expected_bits` is `Some`, generates exactly that many bit-pairs;
+/// otherwise uses capacity (legacy, may mismatch ordering).
+pub fn extract_coded_bits_soft_residual(
+    original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    aligned: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+    expected_bits: Option<usize>,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    let (iw, ih) = original.dimensions();
+    let (aw, ah) = aligned.dimensions();
+    anyhow::ensure!(
+        iw == aw && ih == ah,
+        "original {}×{} vs aligned {}×{} size mismatch",
+        iw,
+        ih,
+        aw,
+        ah
+    );
+    // Strong path: seed from original directly (embed-time stable_seed)
+    let seed = stable_seed(original);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+    let sync_blocks = prng_block_list(SEED_MAGIC, iw, ih, 64 * 8);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_blocks.iter().copied().collect();
+
+    let (n_bits, candidates) = if let Some(exp) = expected_bits {
+        let need_pairs = exp;
+        let mut cand = prng_block_list(kseed, iw, ih, need_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|b| !sync_set.contains(b));
+        anyhow::ensure!(
+            cand.len() >= need_pairs * 2,
+            "insufficient keyed blocks for expected bits (residual)"
+        );
+        cand.truncate(need_pairs * 2);
+        cand.sort_unstable();
+        (need_pairs, cand)
+    } else {
+        let total_blocks = (iw / 8) * (ih / 8);
+        let max_pairs = ((total_blocks as usize).saturating_sub(sync_blocks.len())) / 2;
+        let mut cand = prng_block_list(kseed, iw, ih, max_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|b| !sync_set.contains(b));
+        cand.truncate(max_pairs * 2);
+        cand.sort_unstable();
+        if !cand.len().is_multiple_of(2) {
+            cand.pop();
+        }
+        (cand.len() / 2, cand)
+    };
+
+    let mut diffs = Vec::with_capacity(n_bits);
+    for i in 0..n_bits {
+        let (bx0, by0) = candidates[2 * i];
+        let (bx1, by1) = candidates[2 * i + 1];
+        // Residual coefficient at ID_TARGET for each block (average over 3 channels)
+        let coeff0 = residual_block_coeff(original, aligned, bx0, by0);
+        let coeff1 = residual_block_coeff(original, aligned, bx1, by1);
+        diffs.push(coeff0 - coeff1);
+    }
+    let sigma = crate::ecc::estimate_sigma(&diffs);
+    Ok(diffs
+        .iter()
+        .map(|&d| crate::ecc::SoftBit::from_coeff(d, sigma))
+        .collect())
+}
+
+/// Helper: DCT coefficient of residual block `R = aligned − original` at ID_TARGET.
+/// Averages over 3 channels.
+fn residual_block_coeff(
+    original: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    aligned: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    bx: u32,
+    by: u32,
+) -> f32 {
+    let ox = bx * 8;
+    let oy = by * 8;
+    let mut sum = 0.0f32;
+    for ch in 0..3 {
+        let mut r_block = [[0.0f32; 8]; 8];
+        for row in 0..8 {
+            for col in 0..8 {
+                let o = original.get_pixel(ox + col, oy + row)[ch] as f32;
+                let a = aligned.get_pixel(ox + col, oy + row)[ch] as f32;
+                r_block[row as usize][col as usize] = a - o;
+            }
+        }
+        dct8x8_forward(&mut r_block);
+        sum += r_block[ID_TARGET_U][ID_TARGET_V];
+    }
+    sum / 3.0
+}
+
 /// Metrics from DCT-domain verification.
 #[derive(Debug, Clone)]
 pub struct DctSignalMetrics {
