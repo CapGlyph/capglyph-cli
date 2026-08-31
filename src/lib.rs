@@ -16,6 +16,8 @@ pub mod info;
 #[cfg(feature = "learned")]
 pub mod learned;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod pointer;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod strip;
 pub mod verify;
 pub mod wasm_api;

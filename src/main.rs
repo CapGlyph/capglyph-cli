@@ -8,7 +8,7 @@ use tracing_subscriber::FmtSubscriber;
 #[cfg(not(target_arch = "wasm32"))]
 use capglyph::cli::{Cli, Commands};
 #[cfg(not(target_arch = "wasm32"))]
-use capglyph::{batch, embed, extract, info, strip, verify};
+use capglyph::{batch, embed, extract, info, pointer, strip, verify};
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
@@ -41,6 +41,22 @@ fn main() -> anyhow::Result<()> {
             let id = extract::run(args)?;
             println!("{}", id);
         }
+        Commands::Pointer(args) => match &args.command {
+            capglyph::cli::PointerCommand::Embed(a) => pointer::run_pointer_embed(a)?,
+            capglyph::cli::PointerCommand::Extract(a) => pointer::run_pointer_extract(a)?,
+            capglyph::cli::PointerCommand::OfflineEmbed(a) => {
+                pointer::run_pointer_offline_embed(a)?
+            }
+            capglyph::cli::PointerCommand::OfflineExtract(a) => {
+                pointer::run_pointer_offline_extract(a)?
+            }
+        },
+        Commands::Message(args) => match &args.command {
+            capglyph::cli::MessageCommand::Encrypt(a) => pointer::run_pointer_embed(a)?,
+            capglyph::cli::MessageCommand::Decrypt(a) => pointer::run_pointer_extract(a)?,
+            capglyph::cli::MessageCommand::Store(a) => pointer::run_message_store(a)?,
+            capglyph::cli::MessageCommand::Resolve(a) => pointer::run_message_resolve(a)?,
+        },
         #[cfg(feature = "learned")]
         Commands::FetchModels(args) => {
             let dir = capglyph::learned::model_dir(args.model_dir.as_deref());
