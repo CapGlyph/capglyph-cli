@@ -1,7 +1,7 @@
 name: "capglyph"
 arch: "amd64"
 platform: "linux"
-version: 0.2.0
+version: 0.1.0
 section: "default"
 priority: "optional"
 maintainer: "capglyph developers"

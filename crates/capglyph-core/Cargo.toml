@@ -1,6 +1,6 @@
 [package]
 name = "capglyph-core"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2021"
 description = "Core codec and carrier primitives for capglyph (shared with capglyph-wasm and capglyphd)"
 license = "Apache-2.0"

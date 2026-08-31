@@ -1,7 +1,7 @@
 # CapGlyph — Specification v1.0
 
-**Version:** 0.2.0 (code) / 1.0 (spec)
-**Date:** 2026-08-15 (updated 2026-08-31 for CapGlyph rename, formerly Sigil)
+**Version:** 0.1.0 (code) / 1.0 (spec) — reset from Sigil 0.2.0 for CapGlyph org fresh start
+**Date:** 2026-08-31 (updated 2026-08-31 for CapGlyph rename, formerly Sigil; version bump 0.2.0 → 0.1.0)
 **Status:** Implemented & verified (28 tests; attack matrices Q1.3–Q1.14, Q4.1–Q4.6)
 
 ---

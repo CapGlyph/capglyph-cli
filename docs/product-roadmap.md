@@ -1,7 +1,7 @@
 # CapGlyph Product Roadmap
 
-**Last updated:** 2026-08-31 (renamed from Sigil, formerly Sigil)
-**Status:** Open-source CLI shipped (v0.2.0) → open-core monetization
+**Last updated:** 2026-08-31 (renamed from Sigil, formerly Sigil; version 0.2.0 → 0.1.0 fresh start)
+**Status:** Open-source CLI shipped (v0.1.0, formerly Sigil v0.2.0) → open-core monetization
 
 ---
 
@@ -32,7 +32,7 @@ with an open, auditable scheme.
 
 ## Phase 2: Adoption & Trust Building (next)
 
-- [ ] GitHub Release v0.2.0 binaries (5 platforms, `capglyph` binary with `sigil` alias)
+- [ ] GitHub Release v0.1.0 binaries (5 platforms, `capglyph` binary with `sigil` alias) — formerly Sigil v0.2.0
 - [ ] Interactive web demo (upload → attack → extract)
 - [ ] Public attack-matrix page (open weakness disclosure vs Steg.AI)
 - [ ] Hacker News / security-community launch
