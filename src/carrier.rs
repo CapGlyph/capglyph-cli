@@ -1,81 +1,37 @@
 //! Carrier trait — abstracts embed/verify/extract + metrics for each watermark mode.
 //!
-//! Prepares mechanical extraction of `sigil-core` (DEC-0003 Phase 1). The trait
-//! is intentionally object-safe-ish but used as a static dispatch via associated
-//! types; `embed.rs` dispatches through `DctCarrier`/`DwtCarrier` impls so the
-//! call sites are ready to become `sigil_core::Carrier` after the crate split.
-//!
-//! No behavior change — each impl delegates to the existing `crate::dct`,
-//! `crate::dwt_embed`, and `crate::extract` primitives.
+//! This file implements `sigil_core::carrier::Carrier` for DCT/DWT carriers.
+//! The trait itself now lives in `sigil-core` (`sigil_core::carrier::Carrier`);
+//! this facade keeps the concrete `DctCarrier`/`DwtCarrier` impls that delegate
+//! to `crate::dct`/`crate::dwt_embed` (which are still in the `sigil` binary crate).
+
+pub use sigil_core::carrier::{AlphaCarrier, Carrier};
+pub use sigil_core::placement::Placement;
 
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
 
-use crate::cli::PlacementStrategy;
 use crate::geometry::GeometryFile;
 use crate::registration::{CoverVault, HybridMatch, Registration};
 
-/// Unified interface for a watermark carrier (frequency-domain or spatial).
-///
-/// Each carrier operates on an RGB image buffer and optional geometry. The
-/// `Metrics` associated type carries the verification signal for that carrier.
-pub trait Carrier {
-    /// Human-readable name (`"dct"`, `"dwt"`, `"alpha"`).
-    const NAME: &'static str;
-
-    /// Verification metrics produced by this carrier.
-    type Metrics: std::fmt::Debug;
-
-    /// Embed watermark into `img` in-place.
-    ///
-    /// Returns `(count, positions)` where `count` is the number of marked
-    /// blocks/coefficients and `positions` are the sorted coordinates used.
-    fn embed(
-        img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
-        geometry: &GeometryFile,
-        recipient_id: Option<&str>,
-        key: Option<&str>,
-        placement: &PlacementStrategy,
-    ) -> Result<(u64, Vec<(u32, u32)>)>;
-
-    /// Embed with explicit strength (DWT uses `dwt_strength`, DCT ignores it).
-    ///
-    /// Default impl forwards to `embed` so DCT callers need not branch.
-    fn embed_with_strength(
-        img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
-        geometry: &GeometryFile,
-        recipient_id: Option<&str>,
-        key: Option<&str>,
-        placement: &PlacementStrategy,
-        strength: f32,
-    ) -> Result<(u64, Vec<(u32, u32)>)> {
-        let _ = strength;
-        Self::embed(img, geometry, recipient_id, key, placement)
+/// Convert core `Placement` to legacy CLI `PlacementStrategy` for the
+/// `crate::dct`/`crate::dwt_embed` primitives that still take the CLI type.
+fn to_cli_placement(p: &Placement) -> crate::cli::PlacementStrategy {
+    match p {
+        Placement::Skeleton => crate::cli::PlacementStrategy::Skeleton,
+        Placement::Prng => crate::cli::PlacementStrategy::Prng,
+        Placement::Edge => crate::cli::PlacementStrategy::Edge,
     }
+}
 
-    /// Verify watermark presence and return carrier-specific metrics.
-    ///
-    /// `placement` selects the coefficient placement arm. For DWT only
-    /// `Skeleton` is supported — `Edge`/`Prng` return an error.
-    fn verify(
-        img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        geometry: &GeometryFile,
-        placement: &PlacementStrategy,
-    ) -> Result<Self::Metrics>;
-
-    /// Verify the key-derived secret layer (differential-pair mean).
-    ///
-    /// Returns mean signal: correct key → ≈ 2·delta, wrong key → ≈ 0.
-    fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64;
-
-    /// Extract geometry-free recipient ID (self-sync PRNG recovered).
-    fn extract(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, id_length: usize) -> Result<String>;
-
-    /// Whether `metrics` indicates watermark presence at `threshold`.
-    fn metrics_is_present(metrics: &Self::Metrics, threshold: f64) -> bool;
-
-    /// Mean signal extracted from `metrics` (for threshold comparisons).
-    fn metrics_mean_signal(metrics: &Self::Metrics) -> f64;
+/// Convert CLI `PlacementStrategy` to core `Placement` (for tests that still
+/// construct the CLI type and need to call core APIs).
+pub fn to_core_placement(p: &crate::cli::PlacementStrategy) -> Placement {
+    match p {
+        crate::cli::PlacementStrategy::Skeleton => Placement::Skeleton,
+        crate::cli::PlacementStrategy::Prng => Placement::Prng,
+        crate::cli::PlacementStrategy::Edge => Placement::Edge,
+    }
 }
 
 // ── DctCarrier ───────────────────────────────────────────────────────────────
@@ -92,17 +48,23 @@ impl Carrier for DctCarrier {
         geometry: &GeometryFile,
         recipient_id: Option<&str>,
         key: Option<&str>,
-        placement: &PlacementStrategy,
+        placement: &Placement,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dct::embed(img, geometry, recipient_id, key, placement)
+        crate::dct::embed(
+            img,
+            geometry,
+            recipient_id,
+            key,
+            &to_cli_placement(placement),
+        )
     }
 
     fn verify(
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         geometry: &GeometryFile,
-        placement: &PlacementStrategy,
+        placement: &Placement,
     ) -> Result<Self::Metrics> {
-        crate::dct::verify(img, geometry, placement)
+        crate::dct::verify(img, geometry, &to_cli_placement(placement))
     }
 
     fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
@@ -127,7 +89,7 @@ impl Carrier for DctCarrier {
 
 /// DWT-domain carrier (Haar LH band).
 ///
-/// Only `PlacementStrategy::Skeleton` is currently supported. `Edge` and
+/// Only `Placement::Skeleton` is currently supported. `Edge` and
 /// `Prng` are rejected fail-closed (`anyhow::Error` containing "unsupported
 /// DWT placement") so that callers cannot silently receive a Skeleton result
 /// when they asked for a different placement arm. This keeps `DwtCarrier`
@@ -144,9 +106,15 @@ impl Carrier for DwtCarrier {
         geometry: &GeometryFile,
         recipient_id: Option<&str>,
         key: Option<&str>,
-        placement: &PlacementStrategy,
+        placement: &Placement,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dwt_embed::embed(img, geometry, recipient_id, key, placement)
+        crate::dwt_embed::embed(
+            img,
+            geometry,
+            recipient_id,
+            key,
+            &to_cli_placement(placement),
+        )
     }
 
     fn embed_with_strength(
@@ -154,18 +122,25 @@ impl Carrier for DwtCarrier {
         geometry: &GeometryFile,
         recipient_id: Option<&str>,
         key: Option<&str>,
-        placement: &PlacementStrategy,
+        placement: &Placement,
         strength: f32,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dwt_embed::embed_with_strength(img, geometry, recipient_id, key, placement, strength)
+        crate::dwt_embed::embed_with_strength(
+            img,
+            geometry,
+            recipient_id,
+            key,
+            &to_cli_placement(placement),
+            strength,
+        )
     }
 
     fn verify(
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         geometry: &GeometryFile,
-        placement: &PlacementStrategy,
+        placement: &Placement,
     ) -> Result<Self::Metrics> {
-        crate::dwt_embed::verify(img, geometry, placement)
+        crate::dwt_embed::verify(img, geometry, &to_cli_placement(placement))
     }
 
     fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
@@ -206,7 +181,7 @@ impl DctCarrier {
         geometry: &GeometryFile,
         payload: &[u8],
         keys: &crate::keying::KeyMaterial,
-        placement: &PlacementStrategy,
+        placement: &Placement,
         profile: crate::ecc::Profile,
         payload_type: crate::framing::PayloadType,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
@@ -224,7 +199,13 @@ impl DctCarrier {
             crate::ecc::Profile::RsInterleaved { .. } => crate::ecc::bytes_to_bits(&coded),
         };
         // Delegate to DCT differential embed
-        crate::dct::embed_coded_bits(img, geometry, &coded_bits, keys, placement)
+        crate::dct::embed_coded_bits(
+            img,
+            geometry,
+            &coded_bits,
+            keys,
+            &to_cli_placement(placement),
+        )
     }
 
     /// Extract and open a framed payload. Returns raw payload bytes after ECC
@@ -453,7 +434,7 @@ impl DwtCarrier {
         geometry: &GeometryFile,
         payload: &[u8],
         keys: &crate::keying::KeyMaterial,
-        placement: &PlacementStrategy,
+        placement: &Placement,
         profile: crate::ecc::Profile,
         payload_type: crate::framing::PayloadType,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
@@ -470,7 +451,13 @@ impl DwtCarrier {
             }
             crate::ecc::Profile::RsInterleaved { .. } => crate::ecc::bytes_to_bits(&coded),
         };
-        crate::dwt_embed::embed_coded_bits(img, geometry, &coded_bits, keys, placement)
+        crate::dwt_embed::embed_coded_bits(
+            img,
+            geometry,
+            &coded_bits,
+            keys,
+            &to_cli_placement(placement),
+        )
     }
 
     pub fn extract_framed(
@@ -651,36 +638,5 @@ impl DwtCarrier {
             );
         }
         Self::extract_framed_with_hint(img, keys, profile, expected_payload_len)
-    }
-}
-
-// ── AlphaCarrier (presence-only, no recoverable bits) ──────────────────────
-
-/// Alpha-channel carrier (sparse semi-transparent pixels).
-///
-/// Exists for completeness so `crate::core` can enumerate all carriers. Embed
-/// is **not** implemented via the RGB `Carrier::embed` signature because alpha
-/// compositing requires an `RgbaImage`; callers should continue using
-/// `crate::embed::embed_to_image` for `Alpha`. Verify/extract helpers below
-/// operate on `Rgba` buffers via `crate::signal`.
-pub struct AlphaCarrier;
-
-impl AlphaCarrier {
-    /// Verify alpha presence on an `RgbaImage` byte buffer.
-    pub fn verify_rgba(pixels: &[u8], width: u32, height: u32, threshold: f64) -> bool {
-        let m = crate::signal::SignalMetrics::compute(pixels, width, height);
-        m.is_present(threshold)
-    }
-
-    /// Verify alpha presence (v2) with minimum pixel count.
-    pub fn verify_rgba_v2(
-        pixels: &[u8],
-        width: u32,
-        height: u32,
-        threshold: f64,
-        min_pixels: u64,
-    ) -> bool {
-        let m = crate::signal::SignalMetrics::compute(pixels, width, height);
-        m.is_present_v2(threshold, min_pixels)
     }
 }

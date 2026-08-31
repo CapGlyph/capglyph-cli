@@ -258,12 +258,13 @@ pub(crate) fn embed_to_image(
                 None
             };
             let mut rgb = img.to_rgb8();
+            let core_placement = crate::carrier::to_core_placement(placement);
             let (count, blocks) = crate::carrier::DctCarrier::embed(
                 &mut rgb,
                 geometry,
                 recipient_id,
                 key,
-                placement,
+                &core_placement,
             )?;
             let rgba = match orig_alpha {
                 Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
@@ -278,12 +279,13 @@ pub(crate) fn embed_to_image(
                 None
             };
             let mut rgb = img.to_rgb8();
+            let core_placement = crate::carrier::to_core_placement(placement);
             let (n_coeffs, dwt_positions) = crate::carrier::DwtCarrier::embed_with_strength(
                 &mut rgb,
                 geometry,
                 recipient_id,
                 key,
-                placement,
+                &core_placement,
                 dwt_strength,
             )?;
             let rgba = match orig_alpha {
