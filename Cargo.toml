@@ -31,8 +31,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # NOTE: the `vectomancy` facade is intentionally NOT a dependency — capglyph only
 # uses vectomancy-raster + vectomancy-geometry, and the facade pulls tera/zip/
 # flate2/rand into the wasm graph for nothing.
-vectomancy-raster = { path = "../../vectomancy/vectomancy/crates/vectomancy-raster" }
-vectomancy-geometry = { path = "../../vectomancy/vectomancy/crates/vectomancy-geometry" }
+# Isolated layout: `capglyph-cli` expects `../vectomancy` sibling (CI: `sigil` + `vectomancy`
+# siblings; local: symlink `/capglyph/vectomancy -> /vectomancy/vectomancy`).
+vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster" }
+vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
