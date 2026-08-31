@@ -13,9 +13,9 @@ Isolated filesystem migration of `vectomancy/sigil*` monorepo layout to
 
 | Source (vectomancy) | Target (capglyph isolated) | Method | GitHub Remote | Notes |
 |---|---|---|---|---|
-| `vectomancy/sigil` | `/mnt/data/Workspace/Projects/capglyph/capglyph-cli` | `gh repo clone CapGlyph/capglyph-cli` (fresh clone from transferred repo) | `origin=https://github.com/CapGlyph/capglyph-cli.git` `upstream=https://github.com/Xuepoo/sigil.git` | Xuepoo/sigil already transferred → CapGlyph/capglyph-cli (verified `gh api` returns `full_name=CapGlyph/capglyph-cli`). HEAD `7136617` identical. History preserved. |
-| `vectomancy/sigil-docs` | `/mnt/data/Workspace/Projects/capglyph/capglyph-docs` | `gh repo clone CapGlyph/capglyph-docs` | `origin=https://github.com/CapGlyph/capglyph-docs.git` `upstream=https://github.com/Xuepoo/sigil-docs.git` | Private repo, HEAD `40d755b` identical to source. |
-| `vectomancy/sigil/crates/sigil-core` | `/mnt/data/Workspace/Projects/capglyph/capglyph-core` | `gh repo clone CapGlyph/capglyph-core` (empty placeholder) | `origin=https://github.com/CapGlyph/capglyph-core.git` `upstream=https://github.com/Xuepoo/sigil.git` | Empty repo (CTX-0040 will extract `crates/sigil-core` as standalone canonical Rust Core with WASM/FFI). |
+| `vectomancy/sigil` | `/mnt/data/Workspace/Projects/capglyph/capglyph-cli` | `gh repo clone CapGlyph/capglyph-cli` (fresh clone from transferred repo) | `origin=https://github.com/CapGlyph/capglyph-cli.git` `upstream=https://github.com/CapGlyph/capglyph-cli.git` (legacy location now redirects) | Legacy Sigil repo already transferred → CapGlyph/capglyph-cli (verified `gh api` returns `full_name=CapGlyph/capglyph-cli`). HEAD `7136617` identical. History preserved. |
+| `vectomancy/sigil-docs` | `/mnt/data/Workspace/Projects/capglyph/capglyph-docs` | `gh repo clone CapGlyph/capglyph-docs` | `origin=https://github.com/CapGlyph/capglyph-docs.git` `upstream=https://github.com/CapGlyph/capglyph-docs.git` | Private repo, HEAD `40d755b` identical to source. |
+| `vectomancy/sigil/crates/sigil-core` | `/mnt/data/Workspace/Projects/capglyph/capglyph-core` | `gh repo clone CapGlyph/capglyph-core` (empty placeholder) | `origin=https://github.com/CapGlyph/capglyph-core.git` `upstream=https://github.com/CapGlyph/capglyph-cli.git` | Empty repo (CTX-0040 will extract `crates/sigil-core` as standalone canonical Rust Core with WASM/FFI). |
 | `vectomancy/sigil-paper` | `/mnt/data/Workspace/Projects/capglyph/capglyph-paper` | `cp -a vectomancy/sigil-paper → capglyph/capglyph-paper` | `origin=https://github.com/CapGlyph/capglyph-paper.git` (created 2026-08-31, private) | Copied `.git` + `carryctx/state.sqlite` preserving `SIGILP` tasks. Original has no remote; new remote created via `gh repo create CapGlyph/capglyph-paper --private`. Push pending. |
 | — | `/mnt/data/Workspace/Projects/capglyph/capglyph-spec` | `gh repo clone CapGlyph/capglyph-spec` (empty) | `origin=https://github.com/CapGlyph/capglyph-spec.git` | Created CTX-0036, reserved for CTX-0041. |
 | — | `/mnt/data/Workspace/Projects/capglyph/capglyph-test-vectors` | `gh repo clone CapGlyph/capglyph-test-vectors` (empty) | `origin=https://github.com/CapGlyph/capglyph-test-vectors.git` | Created CTX-0036, reserved for CTX-0041. |
@@ -27,15 +27,15 @@ Isolated filesystem migration of `vectomancy/sigil*` monorepo layout to
 ```text
 capglyph-cli:
 origin	https://github.com/CapGlyph/capglyph-cli.git (fetch/push)
-upstream	https://github.com/Xuepoo/sigil.git (fetch/push)
+upstream	https://github.com/CapGlyph/capglyph-cli.git (fetch/push)
 
 capglyph-docs:
 origin	https://github.com/CapGlyph/capglyph-docs.git
-upstream	https://github.com/Xuepoo/sigil-docs.git
+upstream	https://github.com/CapGlyph/capglyph-docs.git
 
 capglyph-core:
 origin	https://github.com/CapGlyph/capglyph-core.git
-upstream	https://github.com/Xuepoo/sigil.git
+upstream	https://github.com/CapGlyph/capglyph-cli.git
 
 capglyph-paper:
 origin	https://github.com/CapGlyph/capglyph-paper.git
@@ -46,7 +46,7 @@ origin	https://github.com/CapGlyph/capglyph-*.git
 
 All `origin` use HTTPS per project convention (previously SSH for fresh clones, updated via `git remote set-url`).
 
-Upstream preserves `vectomancy` history (Xuepoo/sigil, Xuepoo/sigil-docs). `Xuepoo/sigil` and `Xuepoo/sigil-docs` now redirect to CapGlyph (transfer verified via `gh api repos/Xuepoo/sigil → full_name CapGlyph/capglyph-cli`).
+Upstream preserves `vectomancy` history (legacy Sigil repos, now CapGlyph). Legacy locations now redirect to CapGlyph (transfer verified via `gh api repos/CapGlyph/capglyph-cli → full_name CapGlyph/capglyph-cli`).
 
 ## CarryCtx Verification (`carryctx --project <new> doctor`)
 
@@ -69,8 +69,8 @@ capglyph-core:   ✓ Git repository (empty), ✓ Database, ✓ Schema — Everyt
 
 ```text
 /mnt/data/Workspace/Projects/vectomancy/          # legacy monorepo container (not a git repo)
-├── sigil/                 → origin Xuepoo/sigil (now redirect), 7136617
-├── sigil-docs/            → origin Xuepoo/sigil-docs (redirect), 40d755b
+├── sigil/                 → origin CapGlyph/capglyph-cli (now redirect), 7136617
+├── sigil-docs/            → origin CapGlyph/capglyph-docs (redirect), 40d755b
 ├── sigil-paper/           → no remote, cefd342
 ├── sigil-website/
 ├── vectomancy/            (core engine)
@@ -106,11 +106,11 @@ cp -a /mnt/data/Workspace/Projects/vectomancy/sigil-paper /mnt/data/Workspace/Pr
 
 # 3. Remotes to HTTPS + upstream
 git -C /mnt/data/Workspace/Projects/capglyph/capglyph-cli remote set-url origin https://github.com/CapGlyph/capglyph-cli.git
-git -C /mnt/data/Workspace/Projects/capglyph/capglyph-cli remote add upstream https://github.com/Xuepoo/sigil.git
+git -C /mnt/data/Workspace/Projects/capglyph/capglyph-cli remote add upstream https://github.com/CapGlyph/capglyph-cli.git
 git -C /mnt/data/Workspace/Projects/capglyph/capglyph-docs remote set-url origin https://github.com/CapGlyph/capglyph-docs.git
-git -C /mnt/data/Workspace/Projects/capglyph/capglyph-docs remote add upstream https://github.com/Xuepoo/sigil-docs.git
+git -C /mnt/data/Workspace/Projects/capglyph/capglyph-docs remote add upstream https://github.com/CapGlyph/capglyph-docs.git
 git -C /mnt/data/Workspace/Projects/capglyph/capglyph-core remote set-url origin https://github.com/CapGlyph/capglyph-core.git
-git -C /mnt/data/Workspace/Projects/capglyph/capglyph-core remote add upstream https://github.com/Xuepoo/sigil.git
+git -C /mnt/data/Workspace/Projects/capglyph/capglyph-core remote add upstream https://github.com/CapGlyph/capglyph-cli.git
 
 HTTPS_PROXY=$NETWORK_PROXY gh repo create CapGlyph/capglyph-paper --private --description "CapGlyph paper — academic paper repository for CapGlyph (migrated from sigil-paper)"
 git -C /mnt/data/Workspace/Projects/capglyph/capglyph-paper remote add origin https://github.com/CapGlyph/capglyph-paper.git

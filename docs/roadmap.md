@@ -1,8 +1,8 @@
-# Sigil — Technical Roadmap
+# CapGlyph — Technical Roadmap
 
-**Last updated:** 2026-08-15
+**Last updated:** 2026-08-31 (renamed from Sigil)
 
-## Status: Core complete (v0.1.0)
+## Status: Core complete (v0.2.0)
 
 All planned embedding stages are implemented and verified against the
 measured attack matrix:

@@ -1,15 +1,15 @@
-# Sigil Product Roadmap
+# CapGlyph Product Roadmap
 
-**Last updated:** 2026-08-15
-**Status:** Open-source CLI shipped (v0.1.0) → open-core monetization
+**Last updated:** 2026-08-31 (renamed from Sigil, formerly Sigil)
+**Status:** Open-source CLI shipped (v0.2.0) → open-core monetization
 
 ---
 
 ## Product Vision
 
-Sigil provides invisible, robust image watermarking for leak source
+CapGlyph (formerly Sigil) provides invisible, robust image watermarking for leak source
 identification, copyright attribution, and tamper detection. Unlike
-metadata-based solutions (EXIF/IPTC) that are trivially stripped, Sigil
+metadata-based solutions (EXIF/IPTC) that are trivially stripped, CapGlyph
 embeds machine-verifiable signals directly into image pixels/frequency data,
 with an open, auditable scheme.
 
@@ -28,11 +28,11 @@ with an open, auditable scheme.
 - [x] Three-layer security model (public/ID/secret)
 - [x] Attack matrix verified and published (Q-series findings)
 - [x] CI/CD, license, docs, README (EN/zh-CN), changelog
-- [x] GitHub repository `Xuepoo/sigil`
+- [x] GitHub repository `CapGlyph/capglyph-cli` (formerly under Xuepoo organization, now redirects)
 
 ## Phase 2: Adoption & Trust Building (next)
 
-- [ ] GitHub Release v0.1.0 binaries (5 platforms)
+- [ ] GitHub Release v0.2.0 binaries (5 platforms, `capglyph` binary with `sigil` alias)
 - [ ] Interactive web demo (upload → attack → extract)
 - [ ] Public attack-matrix page (open weakness disclosure vs Steg.AI)
 - [ ] Hacker News / security-community launch

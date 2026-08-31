@@ -1,13 +1,16 @@
-# Sigil
+# CapGlyph
 
 Invisible structural watermark for images — proof of origin, leak tracing,
 and tamper detection.
+
+> Formerly **Sigil** — the `sigil` binary, `com.sigil.watermark` assertion,
+> and `SIGIL_*` env vars remain as aliases for compatibility.
 
 [简体中文](README.zh-CN.md)
 
 ## What it does
 
-Sigil embeds a sub-perceptual watermark into PNG/JPEG images and can later
+CapGlyph embeds a sub-perceptual watermark into PNG/JPEG images and can later
 verify its presence, extract a per-recipient ID, or prove attribution with a
 secret key. Four independent embedding technologies:
 
@@ -22,32 +25,32 @@ secret key. Four independent embedding technologies:
 
 Prebuilt binaries for Linux, macOS, and Windows (including the `learned` and
 `c2pa` features) are attached to each
-[GitHub Release](https://github.com/Xuepoo/sigil/releases).
+[GitHub Release](https://github.com/CapGlyph/capglyph-cli/releases).
 
 **macOS / Linux — Homebrew:**
 
 ```bash
-brew tap xuepoo/tap
-brew install sigil
+brew tap CapGlyph/tap
+brew install capglyph   # alias `sigil` still available via shim
 ```
 
 **Windows — Scoop:**
 
 ```powershell
-scoop bucket add xuepoo https://github.com/Xuepoo/scoop-bucket
-scoop install sigil
+scoop bucket add capglyph https://github.com/CapGlyph/scoop-bucket
+scoop install capglyph
 ```
 
 **Arch Linux — AUR:**
 
 ```bash
-yay -S sigil-wm-bin      # prebuilt binary (recommended)
+yay -S capglyph-bin      # prebuilt binary (recommended, formerly sigil-wm-bin)
 # or build from source:
-yay -S sigil-wm
+yay -S capglyph          # formerly sigil-wm
 ```
 
 **Linux — deb / rpm / pkg.tar.zst:** download from the
-[latest release](https://github.com/Xuepoo/sigil/releases/latest).
+[latest release](https://github.com/CapGlyph/capglyph-cli/releases/latest).
 
 ## Build from source
 
@@ -61,22 +64,23 @@ cargo build --release --features c2pa     # + C2PA content credentials
 
 ```bash
 # Embed a recipient-specific watermark
-sigil embed photo.png --mode dwt --recipient-id "alice001" --output photo_wm.png
+capglyph embed photo.png --mode dwt --recipient-id "alice001" --output photo_wm.png
+# alias `sigil` still works: sigil embed ...
 
 # Verify
-sigil verify photo_wm.png --mode dwt; echo $?        # 0 = present
+capglyph verify photo_wm.png --mode dwt; echo $?        # 0 = present
 
 # Extract the ID (geometry-free — works on the leaked copy)
-sigil extract leaked.png --mode dwt --id-length 8
+capglyph extract leaked.png --mode dwt --id-length 8
 
 # Keyed attribution (survives collusion attacks)
-sigil embed photo.png --mode dwt --recipient-id "bob" --key "mysecret"
-sigil verify photo_wm.png --mode dwt --key "mysecret"   # + SECRET LAYER PRESENT
+capglyph embed photo.png --mode dwt --recipient-id "bob" --key "mysecret"
+capglyph verify photo_wm.png --mode dwt --key "mysecret"   # + SECRET LAYER PRESENT
 
 # Learned mode (aggressive-edit resistance: JPEG q30, blur σ2, scale 0.5×)
-sigil fetch-models                          # downloads TrustMark ONNX (~65MB)
-sigil embed photo.png --mode learned --recipient-id "carol"
-sigil extract leaked.png --mode learned
+capglyph fetch-models                          # downloads TrustMark ONNX (~65MB)
+capglyph embed photo.png --mode learned --recipient-id "carol"
+capglyph extract leaked.png --mode learned
 ```
 
 ## Attack matrix (measured)
@@ -93,28 +97,30 @@ sigil extract leaked.png --mode learned
 
 ## Content Credentials (C2PA)
 
-Sigil can also sign images with C2PA content credentials — a standards-based
+CapGlyph can also sign images with C2PA content credentials — a standards-based
 provenance manifest. Build with the `c2pa` cargo feature (release binaries
 include it):
 
 ```bash
-sigil c2pa init --org "My Studio"          # self-signed ES256 cert + key
-sigil c2pa sign photo.jpg -o signed.jpg \
-  --cert sigil-certs/cert.pem --pkey sigil-certs/private.key \
+capglyph c2pa init --org "My Studio"          # self-signed ES256 cert + key
+capglyph c2pa sign photo.jpg -o signed.jpg \
+  --cert capglyph-certs/cert.pem --pkey capglyph-certs/private.key \
   --recipient-id alice01 --mode dct
-sigil c2pa verify signed.jpg               # JSON report (0 = valid, 1 = invalid, 2 = unsigned)
+capglyph c2pa verify signed.jpg               # JSON report (0 = valid, 1 = invalid, 2 = unsigned)
 
 # Dual-layer: pixel watermark + provenance manifest in one step
-sigil embed photo.png -m dct --recipient-id alice01 --c2pa \
-  --cert sigil-certs/cert.pem --pkey sigil-certs/private.key
-sigil verify photo_sigil.png --c2pa
+capglyph embed photo.png -m dct --recipient-id alice01 --c2pa \
+  --cert capglyph-certs/cert.pem --pkey capglyph-certs/private.key
+capglyph verify photo_capglyph.png --c2pa
+# legacy paths/certs at sigil-certs/ and `com.sigil.watermark` still read
 ```
 
-The manifest's `com.sigil.watermark` assertion records the watermark mode,
-recipient ID, and keyed flag — so the pixel layer and the manifest
-cross-reference each other. The `c2pa.created` action's digital source type
-defaults to `digitalCapture`; override with `--source-type`
-(`capture | algorithmic | composite | trained` or a full IPTC URI).
+The manifest's `com.capglyph.watermark` assertion (legacy `com.sigil.watermark`
+still recognized) records the watermark mode, recipient ID, and keyed flag — so
+the pixel layer and the manifest cross-reference each other. The
+`c2pa.created` action's digital source type defaults to `digitalCapture`;
+override with `--source-type` (`capture | algorithmic | composite | trained` or
+a full IPTC URI).
 
 **Trust model:** certificates are self-signed, so a valid signature proves
 "was signed by the holder of this key", not "was signed by a known entity".
@@ -123,10 +129,11 @@ HMAC secret is never written into the manifest (only a `keyed: true` flag).
 
 ## Placement Strategies (Evaluation)
 
-For empirical evaluation and baseline comparisons, Sigil supports three block-placement strategies (configurable via `--placement`):
-* `skeleton` (default): Places the watermark along the image's geometric topology paths (edges and ridges).
-* `edge`: A competitive baseline that targets standard high-variance edge blocks.
-* `prng`: An internal control that distributes the watermark uniform-randomly across the image.
+For empirical evaluation and baseline comparisons, CapGlyph supports three block-placement strategies (configurable via `--placement`):
+
+- `skeleton` (default): Places the watermark along the image's geometric topology paths (edges and ridges).
+- `edge`: A competitive baseline that targets standard high-variance edge blocks.
+- `prng`: An internal control that distributes the watermark uniform-randomly across the image.
 
 ## Security model
 
@@ -148,4 +155,4 @@ defeats it at denoising strength ≥0.3.
 ## License
 
 Apache-2.0. Learned mode embeds Adobe TrustMark models (MIT, downloaded
-separately from Adobe's CDN — not distributed with Sigil).
+separately from Adobe's CDN — not distributed with CapGlyph).

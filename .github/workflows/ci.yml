@@ -16,15 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sigil
+        working-directory: capglyph-cli
     steps:
-      # Sigil depends on the vectomancy crates via path deps (../vectomancy).
+      # CapGlyph (formerly Sigil) depends on the vectomancy crates via path deps (../vectomancy).
       # Both repos are checked out side by side under the runner workspace;
       # checkout@v7 rejects paths outside the primary repository dir, so the
       # primary checkout itself lands in a subdirectory.
       - uses: actions/checkout@v7
         with:
-          path: sigil
+          path: capglyph-cli
       - uses: actions/checkout@v7
         with:
           repository: Xuepoo/vectomancy
@@ -42,9 +42,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            sigil/target
+            capglyph-cli/target
             vectomancy/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       - name: Format check
@@ -79,11 +79,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: sigil
+        working-directory: capglyph-cli
     steps:
       - uses: actions/checkout@v7
         with:
-          path: sigil
+          path: capglyph-cli
       - uses: actions/checkout@v7
         with:
           repository: Xuepoo/vectomancy
@@ -94,9 +94,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            sigil/target
+            capglyph-cli/target
             vectomancy/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
       - name: Test (learned+c2pa features)
         run: cargo test --features learned,c2pa
@@ -106,11 +106,11 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sigil
+        working-directory: capglyph-cli
     steps:
       - uses: actions/checkout@v7
         with:
-          path: sigil
+          path: capglyph-cli
       - uses: actions/checkout@v7
         with:
           repository: Xuepoo/vectomancy
@@ -123,9 +123,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            sigil/target
+            capglyph-cli/target
             vectomancy/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('sigil/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
       - name: Check lib compiles for wasm32
         env:
