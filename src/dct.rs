@@ -57,6 +57,10 @@ pub const EMBED_DELTA: f32 = 16.0;
 /// Half of EMBED_DELTA to tolerate minor degradation (JPEG quality≥50 preserves ≥50%).
 pub const VERIFY_THRESHOLD: f32 = 8.0;
 
+/// Frozen Sobel magnitude threshold for the edge-density placement baseline.
+/// Pixels at or above this threshold are eligible edge pixels.
+pub const EDGE_THRESHOLD: f32 = 128.0;
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /// Embed DCT-domain watermark along skeleton paths.
@@ -95,13 +99,15 @@ pub fn embed(
         }
     }
 
-    let target_budget = skeleton_blocks.len().max(32);
+    // Controls use the exact skeleton budget for comparable placement arms.
+    // Empty geometry remains a separate fallback/insufficient-geometry case.
+    let target_budget = skeleton_blocks.len();
 
     let block_set = match placement {
         crate::cli::PlacementStrategy::Prng => {
             prng_blocks_with_budget(img, iw, ih, recipient_id, target_budget)
         }
-        crate::cli::PlacementStrategy::Edge => edge_blocks(img, iw, ih, target_budget),
+        crate::cli::PlacementStrategy::Edge => edge_blocks_with_budget(img, iw, ih, target_budget)?,
         crate::cli::PlacementStrategy::Skeleton => {
             if skeleton_blocks.is_empty() {
                 prng_blocks(img, iw, ih, recipient_id)
@@ -293,6 +299,244 @@ pub fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
     } else {
         sum / n as f64
     }
+}
+
+/// CTX-0020: Differential coded-bit layer for framed payload (CBOR+ECC).
+///
+/// Encodes `coded_bits` (already CBOR+MAC+ECC) via differential ±`ID_EMBED_DELTA`
+/// at `ID_TARGET` (3,4) over PRNG-derived block pairs keyed by `KeyMaterial`.
+/// Also refreshes the 64-bit sync seed at `SEED_MAGIC` positions so extraction
+/// can recover the PRNG seed without the geometry file. Primary watermark at
+/// `TARGET` (2,3) is preserved for presence detection.
+pub fn embed_coded_bits(
+    img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
+    geometry: &GeometryFile,
+    coded_bits: &[bool],
+    keys: &crate::keying::KeyMaterial,
+    placement: &crate::cli::PlacementStrategy,
+) -> Result<(u64, Vec<(u32, u32)>)> {
+    let (iw, ih) = img.dimensions();
+
+    // Skeleton blocks for primary watermark (presence)
+    let path_pixels = collect_path_pixels(geometry, iw, ih);
+    let mut skeleton_blocks = std::collections::HashSet::new();
+    for (px, py) in &path_pixels {
+        let bx = px / 8;
+        let by = py / 8;
+        if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+            skeleton_blocks.insert((bx, by));
+        }
+    }
+    let target_budget = skeleton_blocks.len();
+    let block_set = match placement {
+        crate::cli::PlacementStrategy::Prng => {
+            prng_blocks_with_budget(img, iw, ih, None, target_budget)
+        }
+        crate::cli::PlacementStrategy::Edge => edge_blocks_with_budget(img, iw, ih, target_budget)?,
+        crate::cli::PlacementStrategy::Skeleton => {
+            if skeleton_blocks.is_empty() {
+                prng_blocks(img, iw, ih, None)
+            } else {
+                skeleton_blocks.clone()
+            }
+        }
+    };
+    let mut primary_blocks: Vec<_> = block_set.into_iter().collect();
+    primary_blocks.sort_unstable();
+    let n_primary = primary_blocks.len() as u64;
+
+    // Sync seed (stable, geometry-free)
+    let seed = stable_seed(img);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+    let sync_blocks = prng_block_list(SEED_MAGIC, iw, ih, 64 * 8);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_blocks.iter().copied().collect();
+
+    // Payload pair positions keyed by K_embed
+    let needed_pairs = coded_bits.len() * 2;
+    if needed_pairs == 0 {
+        // No payload — just embed primary + sync
+    }
+    let total_blocks = (iw / 8) * (ih / 8);
+    let required = sync_blocks.len() + needed_pairs;
+    anyhow::ensure!(
+        required <= total_blocks as usize,
+        "insufficient DCT blocks: need {} (sync {} + payload {}), have {}",
+        required,
+        sync_blocks.len(),
+        needed_pairs,
+        total_blocks
+    );
+
+    let mut payload_pairs: Vec<(u32, u32)> = Vec::new();
+    if needed_pairs > 0 {
+        let mut candidates = prng_block_list(kseed, iw, ih, needed_pairs + sync_set.len() * 2);
+        candidates.retain(|b| !sync_set.contains(b));
+        // For differential we need disjoint pairs — candidates already disjoint via HashSet,
+        // but we ensure we have enough.
+        anyhow::ensure!(
+            candidates.len() >= needed_pairs,
+            "insufficient keyed blocks: need {}, have {}",
+            needed_pairs,
+            candidates.len()
+        );
+        candidates.truncate(needed_pairs);
+        candidates.sort_unstable();
+        payload_pairs = candidates;
+    }
+
+    // Seed bits for sync layer (stable_seed in LE order, same as legacy)
+    let seed_bits: Vec<bool> = seed
+        .to_le_bytes()
+        .iter()
+        .flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1 == 1))
+        .collect();
+
+    for ch in 0..3usize {
+        // Layer 1: primary watermark at skeleton blocks (TARGET)
+        for &(bx, by) in &primary_blocks {
+            let ox = bx * 8;
+            let oy = by * 8;
+            let mut block = extract_block(img, ox, oy, ch);
+            dct8x8_forward(&mut block);
+            block[TARGET_U][TARGET_V] += EMBED_DELTA;
+            dct8x8_inverse(&mut block);
+            write_block(img, ox, oy, ch, &block);
+        }
+        // Layer 2: sync seed bits at magic positions (ID_TARGET)
+        for (i, &(bx, by)) in sync_blocks.iter().enumerate() {
+            let bit_idx = i / 8;
+            if bit_idx >= seed_bits.len() {
+                break;
+            }
+            let delta = if seed_bits[bit_idx] {
+                ID_EMBED_DELTA
+            } else {
+                -ID_EMBED_DELTA
+            };
+            let ox = bx * 8;
+            let oy = by * 8;
+            let mut block = extract_block(img, ox, oy, ch);
+            dct8x8_forward(&mut block);
+            block[ID_TARGET_U][ID_TARGET_V] += delta;
+            dct8x8_inverse(&mut block);
+            write_block(img, ox, oy, ch, &block);
+        }
+        // Layer 3: payload differential pairs at ID_TARGET
+        for (i, &bit) in coded_bits.iter().enumerate() {
+            let a = payload_pairs[2 * i];
+            let b = payload_pairs[2 * i + 1];
+            let delta_a = if bit { ID_EMBED_DELTA } else { -ID_EMBED_DELTA };
+            let delta_b = -delta_a;
+            for &(bx, by, delta) in &[(a.0, a.1, delta_a), (b.0, b.1, delta_b)] {
+                let ox = bx * 8;
+                let oy = by * 8;
+                let mut block = extract_block(img, ox, oy, ch);
+                dct8x8_forward(&mut block);
+                block[ID_TARGET_U][ID_TARGET_V] += delta;
+                dct8x8_inverse(&mut block);
+                write_block(img, ox, oy, ch, &block);
+            }
+        }
+    }
+
+    Ok((n_primary, primary_blocks))
+}
+
+/// CTX-0020 soft extraction: recover sync seed, derive keyed payload pairs,
+/// return `SoftBit` per coded bit via differential `F[3,4]` magnitudes.
+/// If `expected_bits` is Some, generate exactly that many pairs (matching embed);
+/// if None, generate up to capacity (legacy, may mismatch ordering).
+pub fn extract_coded_bits_soft(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    extract_coded_bits_soft_with_hint(img, keys, None)
+}
+
+pub fn extract_coded_bits_soft_with_hint(
+    img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
+    keys: &crate::keying::KeyMaterial,
+    expected_bits: Option<usize>,
+) -> Result<Vec<crate::ecc::SoftBit>> {
+    let (iw, ih) = img.dimensions();
+    // Step 1: recover stable_seed from magic sync blocks
+    let sync_blocks = prng_block_list(SEED_MAGIC, iw, ih, 64 * 8);
+    if sync_blocks.len() < 64 * 8 {
+        anyhow::bail!("image too small for sync seed");
+    }
+    let mut sync_coeffs = Vec::with_capacity(64 * 8);
+    for &(bx, by) in &sync_blocks {
+        let mut sum = 0.0f32;
+        for ch in 0..3 {
+            let mut block = extract_block(img, bx * 8, by * 8, ch);
+            dct8x8_forward(&mut block);
+            sum += block[ID_TARGET_U][ID_TARGET_V];
+        }
+        sync_coeffs.push(sum / 3.0);
+    }
+    let global = sync_coeffs.iter().sum::<f32>() / sync_coeffs.len() as f32;
+    let mut seed_bits = Vec::with_capacity(64);
+    for bit_idx in 0..64 {
+        let start = bit_idx * 8;
+        let group: f32 = sync_coeffs[start..start + 8].iter().sum::<f32>() / 8.0;
+        seed_bits.push(group > global);
+    }
+    let mut seed_bytes = [0u8; 8];
+    for (i, chunk) in seed_bits.chunks(8).enumerate() {
+        seed_bytes[i] = chunk.iter().fold(0u8, |acc, &b| (acc << 1) | b as u8);
+    }
+    let seed = u64::from_le_bytes(seed_bytes);
+    let kseed = crate::keying::prf_k_embed(keys.k_embed(), seed);
+    let sync_set: std::collections::HashSet<(u32, u32)> = sync_blocks.iter().copied().collect();
+
+    let (n_bits, candidates) = if let Some(exp) = expected_bits {
+        // Generate exactly the number of pairs that embed used — same prng count.
+        let need_pairs = exp;
+        let mut cand = prng_block_list(kseed, iw, ih, need_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|b| !sync_set.contains(b));
+        anyhow::ensure!(
+            cand.len() >= need_pairs * 2,
+            "insufficient keyed blocks for expected bits"
+        );
+        cand.truncate(need_pairs * 2);
+        cand.sort_unstable();
+        (need_pairs, cand)
+    } else {
+        let total_blocks = (iw / 8) * (ih / 8);
+        let max_pairs = ((total_blocks as usize).saturating_sub(sync_blocks.len())) / 2;
+        let mut cand = prng_block_list(kseed, iw, ih, max_pairs * 2 + sync_set.len() * 2);
+        cand.retain(|b| !sync_set.contains(b));
+        cand.truncate(max_pairs * 2);
+        cand.sort_unstable();
+        if !cand.len().is_multiple_of(2) {
+            cand.pop();
+        }
+        (cand.len() / 2, cand)
+    };
+    let mut diffs = Vec::with_capacity(n_bits);
+    for i in 0..n_bits {
+        let (bx0, by0) = candidates[2 * i];
+        let (bx1, by1) = candidates[2 * i + 1];
+        let mut coeff0 = 0.0f32;
+        let mut coeff1 = 0.0f32;
+        for ch in 0..3 {
+            let mut b0 = extract_block(img, bx0 * 8, by0 * 8, ch);
+            let mut b1 = extract_block(img, bx1 * 8, by1 * 8, ch);
+            dct8x8_forward(&mut b0);
+            dct8x8_forward(&mut b1);
+            coeff0 += b0[ID_TARGET_U][ID_TARGET_V];
+            coeff1 += b1[ID_TARGET_U][ID_TARGET_V];
+        }
+        coeff0 /= 3.0;
+        coeff1 /= 3.0;
+        diffs.push(coeff0 - coeff1);
+    }
+    let sigma = crate::ecc::estimate_sigma(&diffs);
+    let soft: Vec<crate::ecc::SoftBit> = diffs
+        .iter()
+        .map(|&d| crate::ecc::SoftBit::from_coeff(d, sigma))
+        .collect();
+    Ok(soft)
 }
 
 /// Metrics from DCT-domain verification.
@@ -579,7 +823,7 @@ pub fn edge_blocks(
     ih: u32,
     budget: usize,
 ) -> std::collections::HashSet<(u32, u32)> {
-    let mut sobel = vec![vec![0.0f32; ih as usize]; iw as usize];
+    let mut sobel = vec![vec![false; ih as usize]; iw as usize];
     for y in 1..ih - 1 {
         for x in 1..iw - 1 {
             let get_luma = |px, py| {
@@ -597,29 +841,75 @@ pub fn edge_blocks(
 
             let gx = -tl - 2.0 * cl - bl + tr + 2.0 * cr + br;
             let gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
-            sobel[x as usize][y as usize] = (gx * gx + gy * gy).sqrt();
+            sobel[x as usize][y as usize] = (gx * gx + gy * gy).sqrt() >= EDGE_THRESHOLD;
         }
     }
 
     let mut block_densities = Vec::with_capacity((iw / 8 * ih / 8) as usize);
     for by in 0..(ih / 8) {
         for bx in 0..(iw / 8) {
-            let mut sum = 0.0;
+            let mut eligible_pixels = 0u32;
             for dy in 0..8 {
                 for dx in 0..8 {
-                    sum += sobel[(bx * 8 + dx) as usize][(by * 8 + dy) as usize];
+                    eligible_pixels += sobel[(bx * 8 + dx) as usize][(by * 8 + dy) as usize] as u32;
                 }
             }
-            block_densities.push((sum, bx, by));
+            if eligible_pixels > 0 {
+                block_densities.push((eligible_pixels, edge_rank(bx, by), bx, by));
+            }
         }
     }
-    block_densities.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    block_densities.sort_unstable_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then(a.1.cmp(&b.1))
+            .then(a.2.cmp(&b.2))
+            .then(a.3.cmp(&b.3))
+    });
 
     let mut set = std::collections::HashSet::new();
     for item in block_densities.iter().take(budget) {
-        set.insert((item.1, item.2));
+        set.insert((item.2, item.3));
     }
     set
+}
+
+/// Select exactly `budget` eligible edge blocks, or report insufficient geometry.
+pub fn edge_blocks_with_budget(
+    img: &image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
+    iw: u32,
+    ih: u32,
+    budget: usize,
+) -> anyhow::Result<std::collections::HashSet<(u32, u32)>> {
+    if budget == 0 {
+        anyhow::bail!("insufficient_geometry: edge locations required=1, available=0");
+    }
+    let blocks = edge_blocks(img, iw, ih, budget);
+    if blocks.len() < budget {
+        anyhow::bail!(
+            "insufficient_geometry: edge locations required={}, available={}",
+            budget,
+            blocks.len()
+        );
+    }
+    Ok(blocks)
+}
+
+/// Stable hash used only to break equal-density edge-block ties.
+fn edge_rank(bx: u32, by: u32) -> u64 {
+    fnv1a_hash(&[
+        b'e',
+        b'd',
+        b'g',
+        b'e',
+        (bx >> 24) as u8,
+        (bx >> 16) as u8,
+        (bx >> 8) as u8,
+        bx as u8,
+        (by >> 24) as u8,
+        (by >> 16) as u8,
+        (by >> 8) as u8,
+        by as u8,
+    ])
 }
 
 // ─── PRNG fallback for solid-color / zero-path images ────────────────────────
@@ -920,6 +1210,49 @@ mod tests {
         assert_eq!(blocks.len(), 512);
         let again = prng_block_list(SEED_MAGIC, 512, 512, 512);
         assert_eq!(blocks, again);
+    }
+
+    #[test]
+    fn edge_blocks_are_deterministic_and_budgeted() {
+        let img = ImageBuffer::from_fn(128, 128, |x, y| {
+            let value = if (x / 4 + y / 4) % 2 == 0 { 0 } else { 255 };
+            Rgb([value, value, value])
+        });
+        let first = edge_blocks_with_budget(&img, 128, 128, 32).unwrap();
+        let second = edge_blocks_with_budget(&img, 128, 128, 32).unwrap();
+        assert_eq!(first.len(), 32);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn edge_blocks_report_insufficient_geometry_without_fallback() {
+        let img = ImageBuffer::from_pixel(64, 64, Rgb([128, 128, 128]));
+        let error = edge_blocks_with_budget(&img, 64, 64, 1).unwrap_err();
+        assert!(error.to_string().contains("insufficient_geometry"));
+        assert!(error.to_string().contains("required=1"));
+        assert!(error.to_string().contains("available=0"));
+    }
+
+    #[test]
+    fn edge_blocks_reject_empty_budget_as_insufficient_geometry() {
+        let img = ImageBuffer::from_pixel(64, 64, Rgb([128, 128, 128]));
+        let error = edge_blocks_with_budget(&img, 64, 64, 0).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "insufficient_geometry: edge locations required=1, available=0"
+        );
+    }
+
+    #[test]
+    fn edge_tie_breaking_is_stable_for_equal_density() {
+        let img = ImageBuffer::from_fn(128, 128, |x, _| {
+            let value = if x < 64 { 0 } else { 255 };
+            Rgb([value, value, value])
+        });
+        let first = edge_blocks(&img, 128, 128, 8);
+        let second = edge_blocks(&img, 128, 128, 8);
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 8);
     }
 }
 

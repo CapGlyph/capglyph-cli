@@ -102,6 +102,10 @@ impl SignalMetrics {
         self.semi_transparent_frac >= threshold
     }
 
+    pub fn is_present_v2(&self, threshold: f64, min_pixels: u64) -> bool {
+        self.semi_transparent_frac >= threshold && self.semi_transparent_count >= min_pixels
+    }
+
     /// Human-readable summary line.
     pub fn summary(&self) -> String {
         format!(
@@ -112,5 +116,24 @@ impl SignalMetrics {
             self.alpha_p99,
             self.composite_mae,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SignalMetrics;
+
+    #[test]
+    fn v2_alpha_requires_minimum_signal_count() {
+        let mut pixels = vec![255u8; 4 * 100];
+        for pixel in pixels.chunks_exact_mut(4).take(15) {
+            pixel[3] = 128;
+        }
+        let metrics = SignalMetrics::compute(&pixels, 10, 10);
+        assert!(!metrics.is_present_v2(0.0001, 16));
+
+        pixels[15 * 4 + 3] = 128;
+        let metrics = SignalMetrics::compute(&pixels, 10, 10);
+        assert!(metrics.is_present_v2(0.0001, 16));
     }
 }

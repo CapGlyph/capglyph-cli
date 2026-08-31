@@ -63,6 +63,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -107,6 +108,8 @@ fn verify_present_after_embed() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -131,6 +134,8 @@ fn verify_absent_for_plain_rgb() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -141,6 +146,66 @@ fn verify_absent_for_plain_rgb() {
     .unwrap();
 
     assert!(!present, "plain RGB image should report watermark absent");
+}
+
+#[test]
+fn edge_placement_rejects_empty_geometry_consistently() {
+    use sigil::cli::PlacementStrategy;
+    use sigil::geometry::{AnalysisParams, GeometryFile};
+
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("solid.png");
+    let output = dir.path().join("out.png");
+    let geometry_path = dir.path().join("empty-geometry.json");
+    image::RgbImage::from_pixel(64, 64, image::Rgb([128, 128, 128]))
+        .save(&input)
+        .unwrap();
+
+    let geometry = GeometryFile {
+        version: GeometryFile::CURRENT_VERSION,
+        original_width: 64,
+        original_height: 64,
+        analysis_params: AnalysisParams {
+            detail: 60,
+            min_path_len: 5,
+            chaikin_iters: 3,
+            color: false,
+        },
+        paths: Vec::new(),
+        prng_seed: None,
+        blocks: None,
+    };
+    std::fs::write(&geometry_path, geometry.to_json().unwrap()).unwrap();
+
+    let mut embed_args = default_embed_args(input.clone(), output);
+    embed_args.mode = EmbedMode::Dct;
+    embed_args.placement = PlacementStrategy::Edge;
+    embed_args.from_geometry = Some(geometry_path.clone());
+    let embed_error = embed::run(&embed_args).unwrap_err();
+
+    let verify_error = verify::run(&VerifyArgs {
+        input,
+        placement: PlacementStrategy::Edge,
+        mode: EmbedMode::Dct,
+        geometry: Some(geometry_path),
+        threshold: 0.80,
+        mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
+        key: None,
+        model_dir: None,
+        recipient_id: None,
+        verbose: false,
+        #[cfg(feature = "c2pa")]
+        c2pa: false,
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        embed_error.to_string(),
+        "insufficient_geometry: edge locations required=1, available=0"
+    );
+    assert_eq!(embed_error.to_string(), verify_error.to_string());
 }
 
 #[test]
@@ -172,6 +237,8 @@ fn verify_absent_after_strip() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -219,6 +286,7 @@ fn from_geometry_matches_full_run() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -357,6 +425,8 @@ fn dct_watermark_survives_jpeg_q75() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -403,6 +473,8 @@ fn dct_watermark_degrades_at_jpeg_q50() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -443,6 +515,8 @@ fn alpha_watermark_destroyed_by_jpeg() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -475,6 +549,7 @@ fn dct_preserves_alpha_channel() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         color: false,
         save_geometry: None,
         #[cfg(feature = "c2pa")]
@@ -517,6 +592,8 @@ fn dct_preserves_alpha_channel() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -594,6 +671,7 @@ fn dwt_watermark_embed_and_verify() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -610,6 +688,8 @@ fn dwt_watermark_embed_and_verify() {
         geometry: None,
         threshold: 0.5,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -663,6 +743,7 @@ fn dwt_watermark_survives_jpeg_q75() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -688,6 +769,8 @@ fn dwt_watermark_survives_jpeg_q75() {
         geometry: None,
         threshold: 0.2,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -741,6 +824,7 @@ fn dwt_watermark_survives_scale() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -767,6 +851,8 @@ fn dwt_watermark_survives_scale() {
         geometry: None,
         threshold: 0.3,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: None,
         model_dir: None,
         recipient_id: None,
@@ -818,6 +904,7 @@ fn recipient_id_roundtrip() {
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -871,6 +958,7 @@ fn secret_layer_key_roundtrip() {
         key: Some("k_test_123".to_string()),
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -888,6 +976,8 @@ fn secret_layer_key_roundtrip() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
+        protocol_version: sigil::cli::ProtocolVersion::V1,
+        min_alpha_pixels: 16,
         key: Some("k_test_123".to_string()),
         model_dir: None,
         recipient_id: None,
@@ -942,6 +1032,7 @@ fn secret_layer_dct_roundtrip() {
         key: Some("dct_key_42".to_string()),
         model_dir: None,
         strength: 0.95,
+        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]

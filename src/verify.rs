@@ -100,7 +100,11 @@ fn verify_alpha(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     let pixels = rgba.as_raw();
     let metrics = SignalMetrics::compute(pixels, w, h);
 
-    let present = metrics.is_present(args.threshold);
+    let present = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
+        metrics.is_present_v2(args.threshold, args.min_alpha_pixels)
+    } else {
+        metrics.is_present(args.threshold)
+    };
 
     if present {
         println!("WATERMARK PRESENT");
@@ -171,25 +175,43 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
             }
         }
 
-        if path_pixels.is_empty() {
-            // Solid-color fallback: use stored PRNG seed from geometry file
-            let seed = geom.prng_seed.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No skeleton paths and no PRNG seed in geometry file. \
-                 Re-embed with current Sigil version to generate a seed."
-                )
-            })?;
-            crate::dct::prng_blocks_from_seed(seed, iw, ih)
-        } else {
-            let mut set = HashSet::new();
-            for (px, py) in &path_pixels {
-                let bx = px / 8;
-                let by = py / 8;
-                if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
-                    set.insert((bx, by));
-                }
+        let mut geometry_blocks = HashSet::new();
+        for (px, py) in &path_pixels {
+            let bx = px / 8;
+            let by = py / 8;
+            if (bx + 1) * 8 <= iw && (by + 1) * 8 <= ih {
+                geometry_blocks.insert((bx, by));
             }
-            set
+        }
+
+        if path_pixels.is_empty() {
+            if matches!(args.placement, crate::cli::PlacementStrategy::Edge) {
+                crate::dct::edge_blocks_with_budget(&rgb, iw, ih, geometry_blocks.len())?
+            } else {
+                // Solid-color fallback: use stored PRNG seed from geometry file
+                let seed = geom.prng_seed.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No skeleton paths and no PRNG seed in geometry file. \
+                 Re-embed with current Sigil version to generate a seed."
+                    )
+                })?;
+                crate::dct::prng_blocks_from_seed(seed, iw, ih)
+            }
+        } else {
+            let target_budget = geometry_blocks.len();
+            match args.placement {
+                crate::cli::PlacementStrategy::Prng => crate::dct::prng_blocks_with_budget(
+                    &rgb,
+                    iw,
+                    ih,
+                    args.recipient_id.as_deref(),
+                    target_budget,
+                ),
+                crate::cli::PlacementStrategy::Edge => {
+                    crate::dct::edge_blocks_with_budget(&rgb, iw, ih, target_budget)?
+                }
+                crate::cli::PlacementStrategy::Skeleton => geometry_blocks,
+            }
         }
     } else {
         // New path: re-extract skeleton from watermarked image
@@ -214,7 +236,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
                 skeleton_blocks.insert((bx, by));
             }
         }
-        let target_budget = skeleton_blocks.len().max(32);
+        let target_budget = skeleton_blocks.len();
 
         match args.placement {
             crate::cli::PlacementStrategy::Prng => crate::dct::prng_blocks_with_budget(
@@ -225,7 +247,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
                 target_budget,
             ),
             crate::cli::PlacementStrategy::Edge => {
-                crate::dct::edge_blocks(&rgb, iw, ih, target_budget)
+                crate::dct::edge_blocks_with_budget(&rgb, iw, ih, target_budget)?
             }
             crate::cli::PlacementStrategy::Skeleton => {
                 if skeleton_blocks.is_empty() {
@@ -319,10 +341,18 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     };
 
     let rgb = img.to_rgb8();
-    let metrics = crate::dwt_embed::verify(&rgb, &geometry)?;
+    let metrics = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
+        crate::dwt_embed::verify_v2(&rgb, &geometry)?
+    } else {
+        crate::dwt_embed::verify(&rgb, &geometry)?
+    };
 
-    let present = metrics.mean_signal as f64 >= args.mean_threshold
-        || (metrics.detection_rate >= 0.8 && metrics.mean_signal as f64 >= 2.0);
+    let present = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
+        metrics.mean_signal as f64 >= args.mean_threshold
+    } else {
+        metrics.mean_signal as f64 >= args.mean_threshold
+            || (metrics.detection_rate >= 0.8 && metrics.mean_signal as f64 >= 2.0)
+    };
 
     if present {
         println!("WATERMARK PRESENT");

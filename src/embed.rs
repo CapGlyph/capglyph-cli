@@ -2,8 +2,9 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+use crate::carrier::Carrier;
 use crate::cli::{EmbedArgs, EmbedMode};
-use crate::geometry::{AnalysisParams, GeometryFile, PathEntry};
+use crate::core::geometry::{AnalysisParams, GeometryFile, PathEntry};
 
 /// Entry point for the `embed` subcommand.
 pub fn run(args: &EmbedArgs) -> Result<()> {
@@ -74,6 +75,7 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
                 args.recipient_id.as_deref(),
                 args.key.as_deref(),
                 &args.placement,
+                args.dwt_strength,
             )?;
 
             // Persist block/position coordinates to the geometry file when a
@@ -224,6 +226,7 @@ pub(crate) type EmbedOutput = (image::DynamicImage, Option<(u64, Vec<(u32, u32)>
 /// API (`wasm_api::embed_bytes`). Returns the watermarked RGBA image plus the
 /// block/position coordinates used for recipient-id extraction (dct/dwt only;
 /// `None` for alpha).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn embed_to_image(
     img: &image::DynamicImage,
     mode: EmbedMode,
@@ -232,6 +235,7 @@ pub(crate) fn embed_to_image(
     recipient_id: Option<&str>,
     key: Option<&str>,
     placement: &crate::cli::PlacementStrategy,
+    dwt_strength: f32,
 ) -> Result<EmbedOutput> {
     let (orig_w, orig_h) = (img.width(), img.height());
 
@@ -249,8 +253,13 @@ pub(crate) fn embed_to_image(
                 None
             };
             let mut rgb = img.to_rgb8();
-            let (count, blocks) =
-                crate::dct::embed(&mut rgb, geometry, recipient_id, key, placement)?;
+            let (count, blocks) = crate::carrier::DctCarrier::embed(
+                &mut rgb,
+                geometry,
+                recipient_id,
+                key,
+                placement,
+            )?;
             let rgba = match orig_alpha {
                 Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
                 None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
@@ -264,8 +273,14 @@ pub(crate) fn embed_to_image(
                 None
             };
             let mut rgb = img.to_rgb8();
-            let (n_coeffs, dwt_positions) =
-                crate::dwt_embed::embed(&mut rgb, geometry, recipient_id, key, placement)?;
+            let (n_coeffs, dwt_positions) = crate::carrier::DwtCarrier::embed_with_strength(
+                &mut rgb,
+                geometry,
+                recipient_id,
+                key,
+                placement,
+                dwt_strength,
+            )?;
             let rgba = match orig_alpha {
                 Some(alphas) => merge_rgb_alpha(&rgb, &alphas, orig_w, orig_h),
                 None => image::DynamicImage::ImageRgb8(rgb).to_rgba8(),
@@ -319,6 +334,7 @@ pub fn extract_and_build_geometry(
         key: None,
         model_dir: None,
         strength: 0.95,
+        dwt_strength: crate::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
