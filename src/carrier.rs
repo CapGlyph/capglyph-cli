@@ -53,6 +53,9 @@ pub trait Carrier {
     }
 
     /// Verify watermark presence and return carrier-specific metrics.
+    ///
+    /// `placement` selects the coefficient placement arm. For DWT only
+    /// `Skeleton` is supported — `Edge`/`Prng` return an error.
     fn verify(
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         geometry: &GeometryFile,
@@ -122,6 +125,13 @@ impl Carrier for DctCarrier {
 // ── DwtCarrier ───────────────────────────────────────────────────────────────
 
 /// DWT-domain carrier (Haar LH band).
+///
+/// Only `PlacementStrategy::Skeleton` is currently supported. `Edge` and
+/// `Prng` are rejected fail-closed (`anyhow::Error` containing "unsupported
+/// DWT placement") so that callers cannot silently receive a Skeleton result
+/// when they asked for a different placement arm. This keeps `DwtCarrier`
+/// consistent with `DctCarrier` (which does honour all three placements) and
+/// with `verify.rs` which now forwards the placement to `dwt_embed::verify`.
 pub struct DwtCarrier;
 
 impl Carrier for DwtCarrier {
@@ -152,11 +162,9 @@ impl Carrier for DwtCarrier {
     fn verify(
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
         geometry: &GeometryFile,
-        _placement: &PlacementStrategy,
+        placement: &PlacementStrategy,
     ) -> Result<Self::Metrics> {
-        // DWT placement is currently geometry-only; placement is ignored to
-        // keep the trait signature uniform.
-        crate::dwt_embed::verify(img, geometry)
+        crate::dwt_embed::verify(img, geometry, placement)
     }
 
     fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {

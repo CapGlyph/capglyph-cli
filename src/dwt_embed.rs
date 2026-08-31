@@ -47,6 +47,21 @@ pub const SEED_MAGIC: u64 = crate::dct::SEED_MAGIC;
 /// Redundancy for self-sync seed bits (same as DCT mode).
 pub const SYNC_REDUNDANCY: usize = 8;
 
+/// DWT currently only supports Skeleton placement. Edge/Prng are explicitly
+/// rejected fail-closed so callers cannot silently get a Skeleton result when
+/// they requested a different placement arm. This keeps DWT consistent with
+/// the Carrier trait contract and with `verify.rs` which dispatches Edge/Prng
+/// for DCT.
+fn ensure_placement_supported(placement: &crate::cli::PlacementStrategy) -> Result<()> {
+    match placement {
+        crate::cli::PlacementStrategy::Skeleton => Ok(()),
+        other => anyhow::bail!(
+            "unsupported DWT placement: {:?} (only Skeleton is supported; DWT embeds only at geometry-derived LH positions)",
+            other
+        ),
+    }
+}
+
 /// Metrics from DWT watermark verification.
 #[derive(Debug)]
 pub struct DwtSignalMetrics {
@@ -77,14 +92,15 @@ pub fn embed(
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
     secret_key: Option<&str>,
-    _placement: &crate::cli::PlacementStrategy,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
+    ensure_placement_supported(placement)?;
     embed_with_strength(
         img,
         geometry,
         recipient_id,
         secret_key,
-        _placement,
+        placement,
         DWT_EMBED_STRENGTH,
     )
 }
@@ -97,10 +113,11 @@ pub fn embed_with_strength(
     geometry: &GeometryFile,
     recipient_id: Option<&str>,
     secret_key: Option<&str>,
-    _placement: &crate::cli::PlacementStrategy,
+    placement: &crate::cli::PlacementStrategy,
     strength: f32,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
     anyhow::ensure!(strength > 0.0, "DWT strength must be positive");
+    ensure_placement_supported(placement)?;
     let (w, h) = img.dimensions();
 
     let positions = collect_embed_positions(geometry, w, h);
@@ -302,8 +319,9 @@ pub fn embed_coded_bits(
     geometry: &GeometryFile,
     coded_bits: &[bool],
     keys: &crate::keying::KeyMaterial,
-    _placement: &crate::cli::PlacementStrategy,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<(u64, Vec<(u32, u32)>)> {
+    ensure_placement_supported(placement)?;
     let (w, h) = img.dimensions();
     let positions = collect_embed_positions(geometry, w, h);
     let band_w = w / 2;
@@ -561,7 +579,9 @@ pub fn extract_coded_bits_soft_with_hint(
 pub fn verify(
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<DwtSignalMetrics> {
+    ensure_placement_supported(placement)?;
     let (w, h) = img.dimensions();
 
     let positions = collect_embed_positions(geometry, w, h);
@@ -621,7 +641,9 @@ pub fn verify(
 pub fn verify_v2(
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
     geometry: &GeometryFile,
+    placement: &crate::cli::PlacementStrategy,
 ) -> Result<DwtSignalMetrics> {
+    ensure_placement_supported(placement)?;
     let (w, h) = img.dimensions();
     let positions = collect_embed_positions(geometry, w, h);
     if positions.is_empty() {

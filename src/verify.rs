@@ -342,9 +342,9 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
 
     let rgb = img.to_rgb8();
     let metrics = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
-        crate::dwt_embed::verify_v2(&rgb, &geometry)?
+        crate::dwt_embed::verify_v2(&rgb, &geometry, &args.placement)?
     } else {
-        crate::dwt_embed::verify(&rgb, &geometry)?
+        crate::dwt_embed::verify(&rgb, &geometry, &args.placement)?
     };
 
     let present = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
