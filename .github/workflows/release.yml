@@ -50,12 +50,18 @@ jobs:
         with:
           path: capglyph-cli
 
-      # CapGlyph (formerly Sigil) depends on the vectomancy crates via path deps (../vectomancy).
+      # CapGlyph depends on vectomancy crates + capglyph-core via path deps (../vectomancy, ../capglyph-core).
       - name: Checkout vectomancy (path dependency)
         uses: actions/checkout@v7.0.1
         with:
           repository: Xuepoo/vectomancy
           path: vectomancy
+
+      - name: Checkout capglyph-core (path dependency, CTX-0040)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: CapGlyph/capglyph-core
+          path: capglyph-core
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -68,8 +74,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             capglyph-cli/target
+            capglyph-core/target
             vectomancy/target
-          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'vectomancy/Cargo.lock') }}
+          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('capglyph-cli/Cargo.lock', 'capglyph-core/Cargo.lock', 'vectomancy/Cargo.lock') }}
           restore-keys: release-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Build release (learned+c2pa features)
@@ -191,16 +198,19 @@ jobs:
           url="https://github.com/CapGlyph/capglyph-cli"
           license=('Apache-2.0')
           _vmver=8.0.0
-          source=("capglyph-\$pkgver::https://github.com/CapGlyph/capglyph-cli/archive/refs/tags/v\$pkgver.tar.gz"
-                  "vectomancy-\$_vmver::https://github.com/Xuepoo/vectomancy/archive/refs/tags/v\$_vmver.tar.gz")
-          sha256sums=('SKIP'
-                      'SKIP')
-          makedepends=('cargo')
+           source=("capglyph-\$pkgver::https://github.com/CapGlyph/capglyph-cli/archive/refs/tags/v\$pkgver.tar.gz"
+                   "capglyph-core-\$pkgver::https://github.com/CapGlyph/capglyph-core/archive/refs/tags/v\$pkgver.tar.gz"
+                   "vectomancy-\$_vmver::https://github.com/Xuepoo/vectomancy/archive/refs/tags/v\$_vmver.tar.gz")
+           sha256sums=('SKIP'
+                       'SKIP'
+                       'SKIP')
+           makedepends=('cargo')
 
-          prepare() {
-            # capglyph's Cargo.toml (formerly sigil) depends on ../vectomancy path deps
-            ln -sfn "\$srcdir/vectomancy-\$_vmver" "\$srcdir/capglyph-\$pkgver/../vectomancy"
-          }
+           prepare() {
+             # capglyph's Cargo.toml depends on ../vectomancy + ../capglyph-core path deps (CTX-0040)
+             ln -sfn "\$srcdir/vectomancy-\$_vmver" "\$srcdir/capglyph-\$pkgver/../vectomancy"
+             ln -sfn "\$srcdir/capglyph-core-\$pkgver" "\$srcdir/capglyph-\$pkgver/../capglyph-core"
+           }
 
           build() {
             cd "capglyph-\$pkgver"
