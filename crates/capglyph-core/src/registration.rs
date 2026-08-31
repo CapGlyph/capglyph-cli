@@ -6,8 +6,9 @@
 //! soft bits. This cancels host interference so the residual is dominated by
 //! the ±`ID_EMBED_DELTA` / `DWT_ID_EMBED_STRENGTH` signal.
 //!
-//! Design per `sigil-docs/research/media-credential/technology/pointer-and-stego.md`
-//! §5 and `sigil-docs/research/media-credential/architecture/sigil-core-api.md`
+//! Design per `capglyph-docs/research/media-credential/technology/pointer-and-stego.md`
+//! §5 and `capglyph-docs/research/media-credential/architecture/capglyph-core-api.md`
+//! (legacy: `sigil-docs/.../sigil-core-api.md`)
 //! §4.5.
 //!
 //! Registration is intentionally dependency-free: the default `Identity` and

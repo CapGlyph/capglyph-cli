@@ -1,6 +1,6 @@
 //! Native unit tests for the byte-in/byte-out API used by the wasm bridge.
 //! These exercise the exact functions the wasm-engine exposes, no wasm needed.
-use sigil::wasm_api::{embed_bytes, extract_bytes, verify_bytes};
+use capglyph::wasm_api::{embed_bytes, extract_bytes, verify_bytes};
 
 /// Encode an in-memory 512×512 checkerboard PNG (plenty of skeleton blocks).
 fn checkerboard_png(size: u32) -> Vec<u8> {

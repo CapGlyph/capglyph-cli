@@ -595,6 +595,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "capglyph"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "c2pa",
+ "capglyph-core",
+ "ciborium",
+ "clap",
+ "digest 0.11.3",
+ "directories",
+ "glob",
+ "hmac 0.13.0",
+ "image",
+ "rcgen",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "time",
+ "tiny-skia",
+ "tracing",
+ "tracing-subscriber",
+ "trustmark",
+ "ureq 3.4.0",
+ "vectomancy-geometry",
+ "vectomancy-raster",
+ "x509-parser",
+]
+
+[[package]]
+name = "capglyph-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "ciborium",
+ "digest 0.11.3",
+ "hmac 0.13.0",
+ "image",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "cc"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3464,54 +3512,6 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "sigil"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "c2pa",
- "ciborium",
- "clap",
- "digest 0.11.3",
- "directories",
- "glob",
- "hmac 0.13.0",
- "image",
- "rcgen",
- "serde",
- "serde_bytes",
- "serde_json",
- "sha2 0.11.0",
- "sigil-core",
- "tempfile",
- "time",
- "tiny-skia",
- "tracing",
- "tracing-subscriber",
- "trustmark",
- "ureq 3.4.0",
- "vectomancy-geometry",
- "vectomancy-raster",
- "x509-parser",
-]
-
-[[package]]
-name = "sigil-core"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "ciborium",
- "digest 0.11.3",
- "hmac 0.13.0",
- "image",
- "serde",
- "serde_bytes",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tracing",
-]
 
 [[package]]
 name = "signature"

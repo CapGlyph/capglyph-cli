@@ -29,7 +29,12 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
     } else {
         "png"
     };
-    let output_path = resolve_output(&args.input, args.output.as_deref(), "_sigil", default_ext);
+    let output_path = resolve_output(
+        &args.input,
+        args.output.as_deref(),
+        "_capglyph",
+        default_ext,
+    );
 
     // ── 2. Load the source image ──────────────────────────────────────────────
     info!("Loading input image: {:?}", args.input);
@@ -158,7 +163,7 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
 
                 let output = match &args.output {
                     Some(p) => p.clone(),
-                    None => resolve_output(&args.input, None, "_sigil", "png"),
+                    None => resolve_output(&args.input, None, "_capglyph", "png"),
                 };
                 if output.extension().and_then(|e| e.to_str()) == Some("jpg") {
                     out.to_rgb8()
@@ -187,7 +192,7 @@ pub fn embed(args: &EmbedArgs) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--c2pa requires --c2pa-pkey"))?;
         let output = match &args.output {
             Some(p) => p.clone(),
-            None => resolve_output(&args.input, None, "_sigil", "png"),
+            None => resolve_output(&args.input, None, "_capglyph", "png"),
         };
         // sign_image rejects in-place; sign to a hidden sibling temp file
         // with the SAME extension (c2pa derives the format from the path),

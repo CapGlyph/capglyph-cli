@@ -452,6 +452,7 @@ fn verify_learned(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> 
     let rid = args
         .recipient_id
         .clone()
+        .or_else(|| std::env::var("CAPGLYPH_RECIPIENT_ID").ok())
         .or_else(|| std::env::var("SIGIL_RECIPIENT_ID").ok())
         .ok_or_else(|| {
             anyhow::anyhow!("learned verify requires --recipient-id <id> to compare against")

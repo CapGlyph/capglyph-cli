@@ -1,6 +1,6 @@
 //! Byte-in/byte-out watermark API.
 //!
-//! The wasm bridge (`sigil-website/wasm-engine`) and any other embedder can
+//! The wasm bridge (`capglyph-website/wasm-engine`, legacy `sigil-website/wasm-engine`) and any other embedder can
 //! call these without touching the filesystem or the CLI types. Everything is
 //! in-memory: decode → embed/verify/extract → re-encode.
 

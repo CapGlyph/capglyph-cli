@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
-/// Embedding mode for `sigil embed`.
+/// Embedding mode for `capglyph embed` (legacy `sigil embed`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum EmbedMode {
@@ -49,11 +49,12 @@ impl std::fmt::Display for EmbedMode {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser, Debug)]
 #[command(
-    name = "sigil",
+    name = "capglyph",
+    bin_name = "capglyph",
     version,
     author,
     about = "Invisible structural watermark for images",
-    long_about = "Sigil embeds a sub-perceptual structural watermark derived from the image's own \
+    long_about = "CapGlyph (formerly Sigil) embeds a sub-perceptual structural watermark derived from the image's own \
                   geometry. The watermark is invisible to humans but detectable by machines, and \
                   is destroyed by PNG→JPG conversion or screenshots — signalling tampering."
 )]
@@ -92,7 +93,7 @@ pub enum Commands {
 #[cfg(all(not(target_arch = "wasm32"), feature = "learned"))]
 #[derive(Args, Debug)]
 pub struct FetchModelsArgs {
-    /// Directory to store models (default: XDG data dir or $SIGIL_MODEL_DIR)
+    /// Directory to store models (default: XDG data dir or $CAPGLYPH_MODEL_DIR, fallback $SIGIL_MODEL_DIR)
     #[arg(short, long)]
     pub model_dir: Option<PathBuf>,
 }
@@ -124,7 +125,7 @@ pub struct InitCertArgs {
     #[arg(long)]
     pub org: Option<String>,
 
-    /// Output directory for cert.pem + private.key (default: ./sigil-certs/)
+    /// Output directory for cert.pem + private.key (default: ./capglyph-certs/)
     #[arg(short, long)]
     pub out: Option<PathBuf>,
 
@@ -161,7 +162,7 @@ pub struct C2paSignArgs {
     #[arg(long, default_value = "capture")]
     pub source_type: String,
 
-    /// Recipient ID to record in the com.sigil.watermark assertion
+    /// Recipient ID to record in the com.capglyph.watermark assertion (legacy com.sigil.watermark)
     /// (requires --mode)
     #[arg(long, requires = "mode")]
     pub recipient_id: Option<String>,
@@ -191,7 +192,7 @@ pub struct EmbedArgs {
     /// Input image path (.png recommended; .jpg is accepted but output is always PNG)
     pub input: PathBuf,
 
-    /// Output path (default: <stem>_sigil.png next to input)
+    /// Output path (default: <stem>_capglyph.png next to input, legacy _sigil.png)
     /// For JPEG output, use --output file.jpg or --format jpg in batch mode
     #[arg(short, long)]
     pub output: Option<PathBuf>,
@@ -254,7 +255,7 @@ pub struct EmbedArgs {
     pub recipient_id: Option<String>,
 
     /// Learned-mode model directory (TrustMark ONNX files).
-    /// Default: $SIGIL_MODEL_DIR or the XDG data dir. Run `sigil fetch-models`.
+    /// Default: $CAPGLYPH_MODEL_DIR (fallback $SIGIL_MODEL_DIR) or the XDG data dir. Run `capglyph fetch-models`.
     #[arg(long)]
     pub model_dir: Option<PathBuf>,
 
@@ -267,7 +268,7 @@ pub struct EmbedArgs {
     pub dwt_strength: f32,
 
     /// Also sign the output with a C2PA manifest carrying the embed
-    /// parameters as the com.sigil.watermark assertion
+    /// parameters as the com.capglyph.watermark assertion (legacy com.sigil.watermark)
     #[cfg(feature = "c2pa")]
     #[arg(long, requires_all = ["c2pa_cert", "c2pa_pkey"])]
     pub c2pa: bool,

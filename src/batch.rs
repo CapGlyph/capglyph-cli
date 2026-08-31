@@ -39,7 +39,7 @@ fn batch_embed(args: &BatchArgs, paths: &[PathBuf]) -> Result<()> {
             OutputFormat::Png => "png",
             OutputFormat::Jpg => "jpg",
         };
-        let output = args.output_dir.join(format!("{}_sigil.{}", stem, ext));
+        let output = args.output_dir.join(format!("{}_capglyph.{}", stem, ext));
 
         print!(
             "[{}/{}] {} → {} ... ",

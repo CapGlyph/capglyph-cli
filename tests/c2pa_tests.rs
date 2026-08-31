@@ -1,7 +1,7 @@
 //! C2PA integration tests — require the `c2pa` cargo feature.
 #![cfg(feature = "c2pa")]
 
-use sigil::c2pa::{init_cert, sign_image, verify_image, WatermarkClaim};
+use capglyph::c2pa::{init_cert, sign_image, verify_image, WatermarkClaim};
 
 #[test]
 fn watermark_claim_serde_roundtrip() {
@@ -125,7 +125,7 @@ fn sign_image_png_produces_valid_manifest() {
         "failure codes: {failures:?}"
     );
 
-    let claim: WatermarkClaim = manifest.find_assertion("com.sigil.watermark").unwrap();
+    let claim: WatermarkClaim = manifest.find_assertion("com.capglyph.watermark").unwrap();
     assert_eq!(claim.mode, "dct");
     assert_eq!(claim.recipient_id.as_deref(), Some("alice01"));
 }
@@ -308,14 +308,16 @@ fn verify_image_signed_reports_org_and_claim() {
 
 #[test]
 fn cli_parses_c2pa_init_sign_verify() {
+    use capglyph::cli::{Cli, Commands};
     use clap::Parser;
-    use sigil::cli::{Cli, Commands};
 
-    let cli =
-        Cli::try_parse_from(["sigil", "c2pa", "init", "--org", "Acme", "--out", "/tmp/x"]).unwrap();
+    let cli = Cli::try_parse_from([
+        "capglyph", "c2pa", "init", "--org", "Acme", "--out", "/tmp/x",
+    ])
+    .unwrap();
     match &cli.command {
         Commands::C2pa(c) => match &c.command {
-            sigil::cli::C2paCommand::Init(i) => {
+            capglyph::cli::C2paCommand::Init(i) => {
                 assert_eq!(i.org.as_deref(), Some("Acme"));
                 assert_eq!(i.out.as_deref().unwrap().to_str(), Some("/tmp/x"));
             }
@@ -325,12 +327,12 @@ fn cli_parses_c2pa_init_sign_verify() {
     }
 
     let cli = Cli::try_parse_from([
-        "sigil", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "-o", "out.png",
+        "capglyph", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "-o", "out.png",
     ])
     .unwrap();
     match &cli.command {
         Commands::C2pa(c) => match &c.command {
-            sigil::cli::C2paCommand::Sign(s) => {
+            capglyph::cli::C2paCommand::Sign(s) => {
                 assert_eq!(s.input.to_str(), Some("in.png"));
                 assert!(s.recipient_id.is_none());
                 assert_eq!(s.source_type, "capture");
@@ -340,10 +342,10 @@ fn cli_parses_c2pa_init_sign_verify() {
         _ => panic!("wrong command"),
     }
 
-    let cli = Cli::try_parse_from(["sigil", "c2pa", "verify", "in.png"]).unwrap();
+    let cli = Cli::try_parse_from(["capglyph", "c2pa", "verify", "in.png"]).unwrap();
     match &cli.command {
         Commands::C2pa(c) => match &c.command {
-            sigil::cli::C2paCommand::Verify(v) => assert_eq!(v.input.to_str(), Some("in.png")),
+            capglyph::cli::C2paCommand::Verify(v) => assert_eq!(v.input.to_str(), Some("in.png")),
             _ => panic!("wrong subcommand"),
         },
         _ => panic!("wrong command"),
@@ -352,10 +354,10 @@ fn cli_parses_c2pa_init_sign_verify() {
 
 #[test]
 fn cli_c2pa_sign_recipient_id_requires_mode() {
+    use capglyph::cli::Cli;
     use clap::Parser;
-    use sigil::cli::Cli;
     assert!(Cli::try_parse_from([
-        "sigil",
+        "capglyph",
         "c2pa",
         "sign",
         "in.png",
@@ -368,7 +370,7 @@ fn cli_c2pa_sign_recipient_id_requires_mode() {
     ])
     .is_err());
     assert!(Cli::try_parse_from([
-        "sigil",
+        "capglyph",
         "c2pa",
         "sign",
         "in.png",
@@ -383,18 +385,19 @@ fn cli_c2pa_sign_recipient_id_requires_mode() {
     ])
     .is_ok());
     assert!(Cli::try_parse_from([
-        "sigil", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "--mode", "dct",
+        "capglyph", "c2pa", "sign", "in.png", "--cert", "c.pem", "--pkey", "k.key", "--mode",
+        "dct",
     ])
     .is_err());
 }
 
 #[test]
 fn embed_with_c2pa_signs_output_consistently() {
-    use sigil::cli::EmbedArgs;
-    use sigil::embed;
+    use capglyph::cli::EmbedArgs;
+    use capglyph::embed;
 
     let dir = tempfile::tempdir().unwrap();
-    let (cert, key) = sigil::c2pa::init_cert(Some("Dual Layer"), dir.path(), false).unwrap();
+    let (cert, key) = capglyph::c2pa::init_cert(Some("Dual Layer"), dir.path(), false).unwrap();
 
     let input = dir.path().join("input.png");
     let output = dir.path().join("output.png");
@@ -403,10 +406,10 @@ fn embed_with_c2pa_signs_output_consistently() {
     make_fixture_rgb(512, 512).save(&input).unwrap();
 
     let args = EmbedArgs {
-        placement: sigil::cli::PlacementStrategy::Skeleton,
+        placement: capglyph::cli::PlacementStrategy::Skeleton,
         input: input.clone(),
         output: Some(output.clone()),
-        mode: sigil::cli::EmbedMode::Dct,
+        mode: capglyph::cli::EmbedMode::Dct,
         stroke: 0.010,
         detail: 60,
         min_path_len: 5,
@@ -418,14 +421,14 @@ fn embed_with_c2pa_signs_output_consistently() {
         recipient_id: Some("carol07".to_string()),
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         c2pa: true,
         c2pa_cert: Some(cert),
         c2pa_pkey: Some(key),
     };
     embed::run(&args).unwrap();
 
-    let report = sigil::c2pa::verify_image(&output).unwrap();
+    let report = capglyph::c2pa::verify_image(&output).unwrap();
     assert!(report.present);
     assert_eq!(report.signature_status, "valid");
     let claim = report.watermark_claim.expect("watermark claim");
@@ -436,32 +439,32 @@ fn embed_with_c2pa_signs_output_consistently() {
 
 #[test]
 fn verify_with_c2pa_reports_manifest() {
-    use sigil::cli::VerifyArgs;
-    use sigil::verify;
+    use capglyph::cli::VerifyArgs;
+    use capglyph::verify;
 
     let dir = tempfile::tempdir().unwrap();
-    let (cert, key) = sigil::c2pa::init_cert(None, dir.path(), false).unwrap();
+    let (cert, key) = capglyph::c2pa::init_cert(None, dir.path(), false).unwrap();
     let input = dir.path().join("input.png");
     let output = dir.path().join("output.png");
     make_fixture_rgb(512, 512).save(&input).unwrap();
 
     // sign via the c2pa module directly (pixel watermark not needed for the
     // report linkage test)
-    let claim = sigil::c2pa::WatermarkClaim {
+    let claim = capglyph::c2pa::WatermarkClaim {
         mode: "dct".to_string(),
         recipient_id: Some("dave01".to_string()),
         keyed: false,
     };
-    sigil::c2pa::sign_image(&input, &output, &cert, &key, &claim, None, None).unwrap();
+    capglyph::c2pa::sign_image(&input, &output, &cert, &key, &claim, None, None).unwrap();
 
     let args = VerifyArgs {
-        placement: sigil::cli::PlacementStrategy::Skeleton,
+        placement: capglyph::cli::PlacementStrategy::Skeleton,
         input: output.clone(),
-        mode: sigil::cli::EmbedMode::Dct,
+        mode: capglyph::cli::EmbedMode::Dct,
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,

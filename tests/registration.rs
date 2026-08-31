@@ -1,12 +1,12 @@
-use image::{ImageBuffer, Rgb};
-use sigil::carrier::{DctCarrier, DwtCarrier};
-use sigil::ecc::Profile;
-use sigil::framing::PayloadType;
-use sigil::geometry::{AnalysisParams, GeometryFile, PathEntry};
-use sigil::keying::KeyMaterial;
-use sigil::registration::{
+use capglyph::carrier::{DctCarrier, DwtCarrier};
+use capglyph::ecc::Profile;
+use capglyph::framing::PayloadType;
+use capglyph::geometry::{AnalysisParams, GeometryFile, PathEntry};
+use capglyph::keying::KeyMaterial;
+use capglyph::registration::{
     AffineRegistration, CoverVault, IdentityRegistration, Registration, TranslationRegistration,
 };
+use image::{ImageBuffer, Rgb};
 
 fn make_geometry(w: u32, h: u32) -> GeometryFile {
     let points: Vec<[f64; 2]> = (0..64)
@@ -124,7 +124,7 @@ fn dct_residual_with_translation_warp() {
     let dx = 5;
     let dy = -3;
     // Use the registration warp helper directly to create shifted version
-    let shifted = sigil::registration::TranslationRegistration { max_shift: 32 }
+    let shifted = capglyph::registration::TranslationRegistration { max_shift: 32 }
         .align(&orig, &watermarked)
         .unwrap()
         .image;
@@ -321,15 +321,15 @@ fn residual_llr_stronger_than_blind() {
     .unwrap();
 
     // Blind soft bits
-    let params = sigil::framing::Params {
+    let params = capglyph::framing::Params {
         version: 1,
         payload_type: PayloadType::Credential,
         flags: 0,
     };
-    let sealed_len = sigil::framing::sealed_len(16, &params);
-    let need_bits = sigil::ecc::coded_bits_len(sealed_len, profile);
+    let sealed_len = capglyph::framing::sealed_len(16, &params);
+    let need_bits = capglyph::ecc::coded_bits_len(sealed_len, profile);
     let blind_soft =
-        sigil::dct::extract_coded_bits_soft_with_hint(&watermarked, &keys, Some(need_bits))
+        capglyph::dct::extract_coded_bits_soft_with_hint(&watermarked, &keys, Some(need_bits))
             .unwrap();
     let blind_mean_abs: f32 =
         blind_soft.iter().map(|s| s.llr.abs()).sum::<f32>() / blind_soft.len() as f32;
@@ -337,9 +337,13 @@ fn residual_llr_stronger_than_blind() {
     // Residual soft bits
     let reg = IdentityRegistration;
     let aligned = reg.align(&orig, &watermarked).unwrap();
-    let residual_soft =
-        sigil::dct::extract_coded_bits_soft_residual(&orig, &aligned.image, &keys, Some(need_bits))
-            .unwrap();
+    let residual_soft = capglyph::dct::extract_coded_bits_soft_residual(
+        &orig,
+        &aligned.image,
+        &keys,
+        Some(need_bits),
+    )
+    .unwrap();
     let res_mean_abs: f32 =
         residual_soft.iter().map(|s| s.llr.abs()).sum::<f32>() / residual_soft.len() as f32;
 

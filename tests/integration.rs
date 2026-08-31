@@ -43,8 +43,8 @@ fn make_test_rgba_png(dir: &TempDir) -> PathBuf {
     path
 }
 
-use sigil::cli::{EmbedArgs, EmbedMode, StripArgs, VerifyArgs};
-use sigil::{embed, strip, verify};
+use capglyph::cli::{EmbedArgs, EmbedMode, StripArgs, VerifyArgs};
+use capglyph::{embed, strip, verify};
 
 fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
     EmbedArgs {
@@ -63,7 +63,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -79,7 +79,7 @@ fn default_embed_args(input: PathBuf, output: PathBuf) -> EmbedArgs {
 fn embed_produces_rgba_png() {
     let dir = TempDir::new().unwrap();
     let input = make_test_png(&dir);
-    let output = dir.path().join("out_sigil.png");
+    let output = dir.path().join("out_capglyph.png");
 
     embed::run(&default_embed_args(input, output.clone())).unwrap();
 
@@ -97,7 +97,7 @@ fn embed_produces_rgba_png() {
 fn verify_present_after_embed() {
     let dir = TempDir::new().unwrap();
     let input = make_test_png(&dir);
-    let output = dir.path().join("out_sigil.png");
+    let output = dir.path().join("out_capglyph.png");
 
     embed::run(&default_embed_args(input, output.clone())).unwrap();
 
@@ -108,7 +108,7 @@ fn verify_present_after_embed() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -134,7 +134,7 @@ fn verify_absent_for_plain_rgb() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -150,8 +150,8 @@ fn verify_absent_for_plain_rgb() {
 
 #[test]
 fn edge_placement_rejects_empty_geometry_consistently() {
-    use sigil::cli::PlacementStrategy;
-    use sigil::geometry::{AnalysisParams, GeometryFile};
+    use capglyph::cli::PlacementStrategy;
+    use capglyph::geometry::{AnalysisParams, GeometryFile};
 
     let dir = TempDir::new().unwrap();
     let input = dir.path().join("solid.png");
@@ -190,7 +190,7 @@ fn edge_placement_rejects_empty_geometry_consistently() {
         geometry: Some(geometry_path),
         threshold: 0.80,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -212,12 +212,12 @@ fn edge_placement_rejects_empty_geometry_consistently() {
 fn verify_absent_after_strip() {
     let dir = TempDir::new().unwrap();
     let input = make_test_png(&dir);
-    let sigil_out = dir.path().join("out_sigil.png");
+    let capglyph_out = dir.path().join("out_capglyph.png");
     let stripped = dir.path().join("out_stripped.png");
 
-    embed::run(&default_embed_args(input, sigil_out.clone())).unwrap();
+    embed::run(&default_embed_args(input, capglyph_out.clone())).unwrap();
     strip::run(&StripArgs {
-        input: sigil_out,
+        input: capglyph_out,
         output: Some(stripped.clone()),
     })
     .unwrap();
@@ -237,7 +237,7 @@ fn verify_absent_after_strip() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -286,7 +286,7 @@ fn from_geometry_matches_full_run() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -315,7 +315,7 @@ fn from_geometry_matches_full_run() {
 
 #[test]
 fn geometry_json_roundtrip() {
-    use sigil::geometry::{AnalysisParams, GeometryFile, PathEntry};
+    use capglyph::geometry::{AnalysisParams, GeometryFile, PathEntry};
 
     let geo = GeometryFile {
         version: GeometryFile::CURRENT_VERSION,
@@ -354,7 +354,7 @@ fn geometry_json_roundtrip() {
 
 #[test]
 fn signal_metrics_zero_for_blank_rgba() {
-    use sigil::signal::SignalMetrics;
+    use capglyph::signal::SignalMetrics;
 
     // All-transparent image
     let pixels = vec![0u8; 64 * 64 * 4];
@@ -368,7 +368,7 @@ fn signal_metrics_zero_for_blank_rgba() {
 
 #[test]
 fn signal_metrics_full_for_opaque_rgba() {
-    use sigil::signal::SignalMetrics;
+    use capglyph::signal::SignalMetrics;
 
     // All red, fully opaque — no semi-transparent pixels → watermark absent
     let mut pixels = vec![0u8; 64 * 64 * 4];
@@ -425,7 +425,7 @@ fn dct_watermark_survives_jpeg_q75() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -473,7 +473,7 @@ fn dct_watermark_degrades_at_jpeg_q50() {
         geometry: Some(geometry),
         threshold: 0.80,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -515,7 +515,7 @@ fn alpha_watermark_destroyed_by_jpeg() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -549,7 +549,7 @@ fn dct_preserves_alpha_channel() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         color: false,
         save_geometry: None,
         #[cfg(feature = "c2pa")]
@@ -592,7 +592,7 @@ fn dct_preserves_alpha_channel() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -671,7 +671,7 @@ fn dwt_watermark_embed_and_verify() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -688,7 +688,7 @@ fn dwt_watermark_embed_and_verify() {
         geometry: None,
         threshold: 0.5,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -743,7 +743,7 @@ fn dwt_watermark_survives_jpeg_q75() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -769,7 +769,7 @@ fn dwt_watermark_survives_jpeg_q75() {
         geometry: None,
         threshold: 0.2,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -824,7 +824,7 @@ fn dwt_watermark_survives_scale() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -851,7 +851,7 @@ fn dwt_watermark_survives_scale() {
         geometry: None,
         threshold: 0.3,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: None,
         model_dir: None,
@@ -866,8 +866,8 @@ fn dwt_watermark_survives_scale() {
 
 #[test]
 fn recipient_id_roundtrip() {
-    use sigil::cli::{EmbedArgs, EmbedMode, ExtractArgs};
-    use sigil::{embed, extract};
+    use capglyph::cli::{EmbedArgs, EmbedMode, ExtractArgs};
+    use capglyph::{embed, extract};
 
     let tmp = TempDir::new().unwrap();
     // Use a 512×512 checkerboard to generate plenty of skeleton blocks.
@@ -904,7 +904,7 @@ fn recipient_id_roundtrip() {
         key: None,
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -930,8 +930,8 @@ fn recipient_id_roundtrip() {
 
 #[test]
 fn secret_layer_key_roundtrip() {
-    use sigil::cli::{EmbedArgs, EmbedMode, VerifyArgs};
-    use sigil::{embed, verify};
+    use capglyph::cli::{EmbedArgs, EmbedMode, VerifyArgs};
+    use capglyph::{embed, verify};
 
     let tmp = tempfile::TempDir::new().unwrap();
     let input = tmp.path().join("noise_input.png");
@@ -958,7 +958,7 @@ fn secret_layer_key_roundtrip() {
         key: Some("k_test_123".to_string()),
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -976,7 +976,7 @@ fn secret_layer_key_roundtrip() {
         geometry: None,
         threshold: 0.0001,
         mean_threshold: 4.0,
-        protocol_version: sigil::cli::ProtocolVersion::V1,
+        protocol_version: capglyph::cli::ProtocolVersion::V1,
         min_alpha_pixels: 16,
         key: Some("k_test_123".to_string()),
         model_dir: None,
@@ -990,8 +990,8 @@ fn secret_layer_key_roundtrip() {
 
     // Wrong key → secret layer absent (verify against the raw mean)
     let rgb = image::open(&output).unwrap().to_rgb8();
-    let correct_mean = sigil::dwt_embed::verify_secret(&rgb, "k_test_123");
-    let wrong_mean = sigil::dwt_embed::verify_secret(&rgb, "not_the_key");
+    let correct_mean = capglyph::dwt_embed::verify_secret(&rgb, "k_test_123");
+    let wrong_mean = capglyph::dwt_embed::verify_secret(&rgb, "not_the_key");
     assert!(
         correct_mean >= 4.0,
         "correct key should detect secret layer, got {correct_mean}"
@@ -1004,8 +1004,8 @@ fn secret_layer_key_roundtrip() {
 
 #[test]
 fn secret_layer_dct_roundtrip() {
-    use sigil::cli::{EmbedArgs, EmbedMode};
-    use sigil::embed;
+    use capglyph::cli::{EmbedArgs, EmbedMode};
+    use capglyph::embed;
 
     let tmp = tempfile::TempDir::new().unwrap();
     let input = tmp.path().join("big_noise_input.png");
@@ -1032,7 +1032,7 @@ fn secret_layer_dct_roundtrip() {
         key: Some("dct_key_42".to_string()),
         model_dir: None,
         strength: 0.95,
-        dwt_strength: sigil::dwt_embed::DWT_EMBED_STRENGTH,
+        dwt_strength: capglyph::dwt_embed::DWT_EMBED_STRENGTH,
         #[cfg(feature = "c2pa")]
         c2pa: false,
         #[cfg(feature = "c2pa")]
@@ -1043,8 +1043,8 @@ fn secret_layer_dct_roundtrip() {
     embed::run(&args).unwrap();
 
     let rgb = image::open(&output).unwrap().to_rgb8();
-    let correct_mean = sigil::dct::verify_secret(&rgb, "dct_key_42");
-    let wrong_mean = sigil::dct::verify_secret(&rgb, "other_key");
+    let correct_mean = capglyph::dct::verify_secret(&rgb, "dct_key_42");
+    let wrong_mean = capglyph::dct::verify_secret(&rgb, "other_key");
     assert!(
         correct_mean >= 4.0,
         "correct key should detect DCT secret layer, got {correct_mean}"

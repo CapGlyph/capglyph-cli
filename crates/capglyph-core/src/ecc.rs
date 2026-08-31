@@ -3,7 +3,7 @@
 //! Channel coding: Repetition-8 + BCH/RS + interleave + soft-bits.
 //!
 //! Stack per `capacity-robustness-and-threats.md` §3 and
-//! `sigil-core-api.md` §4.3:
+//! `capglyph-core-api.md` §4.3 (legacy: `sigil-core-api.md`):
 //! `Interleave → Modulate(±delta) → Channel → Demodulate → Deinterleave → Decode`.
 //!
 //! - `Repetition8` — 8× bit repetition, hard majority + LLR soft combine.

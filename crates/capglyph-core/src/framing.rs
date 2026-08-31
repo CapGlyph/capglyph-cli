@@ -4,7 +4,8 @@
 //! → `frame_bytes || HMAC-SHA256(frame_bytes, K_mac)`.
 //!
 //! Carrier agnostic — same `seal/open` is used for DCT/DWT/learned.
-//! Mirrors `sigil-docs/research/media-credential/sigil-core-api.md` §4.2.
+//! Mirrors `capglyph-docs/research/media-credential/capglyph-core-api.md` §4.2
+//! (legacy: `sigil-docs/.../sigil-core-api.md`).
 
 use anyhow::{Context, Result};
 use hmac::{Hmac, Mac};
@@ -14,7 +15,7 @@ use sha2::Sha256;
 type HmacSha256 = Hmac<Sha256>;
 
 /// Payload type discriminates credential vs pointer vs message vs locator.
-/// Values match `sigil-core-api.md` §4.2.
+/// Values match `capglyph-core-api.md` §4.2 (legacy `sigil-core-api.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum PayloadType {
