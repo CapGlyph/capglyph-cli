@@ -1,0 +1,156 @@
+{
+  "archive": {
+    "bytes": 17487,
+    "created_at": "2026-08-31T14:50:34Z",
+    "name": "ladder-ctx0025-20260831.tar.gz",
+    "note": "Immutable archive: results.json + manifest.json + ladder binary hash. Fresh R2 key if available, else local artifact.",
+    "sha256": "6bf90123d86829f22121616a15ba08ad28ce02ecf42145439a54dfd72553f064"
+  },
+  "binary": {
+    "path": "target/release/ladder",
+    "sha256": "a5d97632a2a68425195a0dc3415cee06f52d0aadd82d57c97bd4682c7bc25e24"
+  },
+  "experiment_id": "ctx-0025-credential-fer-ladder",
+  "generated_at": "2026-08-31T14:50:34Z",
+  "git_revision": "e5275ae",
+  "parameters": {
+    "attacks": [
+      {
+        "family": "identity",
+        "name": "identity",
+        "params": {},
+        "severity": "identity"
+      },
+      {
+        "family": "jpeg",
+        "name": "jpeg",
+        "params": {
+          "quality": 30
+        },
+        "severity": "30"
+      },
+      {
+        "family": "jpeg",
+        "name": "jpeg",
+        "params": {
+          "quality": 50
+        },
+        "severity": "50"
+      },
+      {
+        "family": "jpeg",
+        "name": "jpeg",
+        "params": {
+          "quality": 75
+        },
+        "severity": "75"
+      },
+      {
+        "family": "blur",
+        "name": "blur",
+        "params": {
+          "sigma": 1.0
+        },
+        "severity": "1.0"
+      },
+      {
+        "family": "blur",
+        "name": "blur",
+        "params": {
+          "sigma": 2.0
+        },
+        "severity": "2.0"
+      },
+      {
+        "family": "resize",
+        "name": "resize",
+        "params": {
+          "scale": 0.5
+        },
+        "severity": "0.5"
+      },
+      {
+        "family": "resize",
+        "name": "resize",
+        "params": {
+          "scale": 0.7
+        },
+        "severity": "0.7"
+      },
+      {
+        "family": "crop",
+        "name": "crop",
+        "params": {
+          "retain": 0.9
+        },
+        "severity": "0.90"
+      },
+      {
+        "family": "crop",
+        "name": "crop",
+        "params": {
+          "retain": 0.75
+        },
+        "severity": "0.75"
+      },
+      {
+        "family": "crop",
+        "name": "crop",
+        "params": {
+          "retain": 0.5
+        },
+        "severity": "0.50"
+      },
+      {
+        "family": "rotate",
+        "name": "rotate",
+        "params": {
+          "degrees": 5.0
+        },
+        "severity": "5"
+      },
+      {
+        "family": "rotate",
+        "name": "rotate",
+        "params": {
+          "degrees": 15.0
+        },
+        "severity": "15"
+      }
+    ],
+    "carriers": [
+      "dct",
+      "dwt",
+      "learned"
+    ],
+    "framing": "CBOR + HMAC-SHA256 (6B header +32B tag=38B overhead \u2192 sealed 54B for 16B)",
+    "key_material": "KeyMaterial::from_keys([0x11;32],[0x22;32])",
+    "note": "FER = frame error rate (1 = HMAC/ECC fail or insufficient_geometry). PSNR is marked vs original. Registered uses TranslationRegistration NCC. Learned mode unavailable (requires TrustMark models).",
+    "payload_bits": 128,
+    "payload_bytes": 16,
+    "placements": [
+      "skeleton",
+      "prng",
+      "edge-density"
+    ],
+    "profiles": [
+      "Repetition8",
+      "Bch{t=3}",
+      "Bch{t=2}"
+    ],
+    "sizes": [
+      512,
+      1024,
+      1254
+    ],
+    "trials": "5 for jpeg at 512/1024, 1 for others"
+  },
+  "reproduce": "cargo run --release --bin ladder -- --output ladder-output --trials 5 --sizes 512,1024 --quick; cargo run --release --bin ladder -- --output /tmp/ladder-1254-quick --trials 1 --sizes 1254 --quick",
+  "results": {
+    "bytes": 444770,
+    "path": "results.json",
+    "records": 531,
+    "sha256": "92e65b5292ea34f7f22253a03d80733b42cda7d3e9ce256994ff51b3599a706a"
+  },
+  "schema_version": 1
+}
