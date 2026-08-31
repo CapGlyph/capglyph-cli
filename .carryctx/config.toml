@@ -7,7 +7,7 @@ task_prefix = "CTX"
 
 [git]
 main_branch = "main"
-branch_template = "carryctx/{task_id}-{slug}"
+branch_template = "ctx-{task_id}/{slug}"
 
 [session]
 stale_after = "2h"
