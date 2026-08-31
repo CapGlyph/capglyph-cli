@@ -1,36 +1,38 @@
 [package]
-name = "sigil"
+name = "capglyph"
 version = "0.2.0"
 edition = "2021"
 description = "Invisible structural watermark for images — human-invisible, machine-detectable"
 license = "Apache-2.0"
-repository = "https://github.com/Xuepoo/sigil"
+repository = "https://github.com/CapGlyph/capglyph-cli"
 keywords = ["watermark", "forensics", "image", "security", "tracing"]
 categories = ["command-line-utilities", "multimedia::images"]
 readme = "README.md"
 
 [workspace]
-members = ["crates/sigil-core"]
+members = ["crates/capglyph-core"]
 resolver = "2"
 
 [lib]
-name = "sigil"
+name = "capglyph"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sigil"
+name = "capglyph"
 path = "src/main.rs"
 
 [dependencies]
-sigil-core = { path = "crates/sigil-core" }
+capglyph-core = { path = "crates/capglyph-core" }
 
 # Image I/O
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 # Vectomancy geometry/raster pipeline (path-based).
-# NOTE: the `vectomancy` facade is intentionally NOT a dependency — sigil only
+# NOTE: the `vectomancy` facade is intentionally NOT a dependency — capglyph only
 # uses vectomancy-raster + vectomancy-geometry, and the facade pulls tera/zip/
 # flate2/rand into the wasm graph for nothing.
+# Isolated layout: `capglyph-cli` expects `../vectomancy` sibling (CI: `sigil` + `vectomancy`
+# siblings; local: symlink `/capglyph/vectomancy -> /vectomancy/vectomancy`).
 vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster" }
 vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry" }
 

@@ -1,9 +1,9 @@
+use capglyph::carrier::{DctCarrier, DwtCarrier};
+use capglyph::ecc::Profile;
+use capglyph::framing::PayloadType;
+use capglyph::geometry::{AnalysisParams, GeometryFile, PathEntry};
+use capglyph::keying::KeyMaterial;
 use image::{ImageBuffer, Rgb};
-use sigil::carrier::{DctCarrier, DwtCarrier};
-use sigil::ecc::Profile;
-use sigil::framing::PayloadType;
-use sigil::geometry::{AnalysisParams, GeometryFile, PathEntry};
-use sigil::keying::KeyMaterial;
 
 fn make_geometry(w: u32, h: u32) -> GeometryFile {
     let points: Vec<[f64; 2]> = (0..64)

@@ -1,12 +1,14 @@
-name: "sigil"
+name: "capglyph"
 arch: "amd64"
 platform: "linux"
 version: 0.2.0
 section: "default"
 priority: "optional"
-maintainer: "sigil developers"
-description: "Sigil - Invisible structural watermark for images"
+maintainer: "capglyph developers"
+description: "CapGlyph - Invisible structural watermark for images (formerly Sigil)"
 license: "Apache-2.0"
 contents:
-  - src: ./sigil-linux-x86_64
+  - src: ./capglyph-linux-x86_64
+    dst: /usr/bin/capglyph
+  - src: ./capglyph-linux-x86_64
     dst: /usr/bin/sigil

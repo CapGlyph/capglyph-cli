@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 
 /// Watermark metadata carried inside the C2PA manifest assertion
-/// (`com.sigil.watermark`), mirroring the pixel-watermark embed parameters.
+/// (`com.capglyph.watermark`, legacy `com.sigil.watermark`), mirroring the pixel-watermark embed parameters.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WatermarkClaim {
     pub mode: String,
@@ -34,11 +34,11 @@ pub fn init_cert(org: Option<&str>, out_dir: &Path, force: bool) -> Result<(Path
     let mut params = rcgen::CertificateParams::new(vec![])?;
     params.distinguished_name.push(
         rcgen::DnType::CommonName,
-        org.unwrap_or("Sigil User").to_string(),
+        org.unwrap_or("CapGlyph User").to_string(),
     );
     params
         .distinguished_name
-        .push(rcgen::DnType::OrganizationName, "Sigil");
+        .push(rcgen::DnType::OrganizationName, "CapGlyph");
     params.not_before = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
     params.not_after = params.not_before + time::Duration::days(730); // 2 years
     params.use_authority_key_identifier_extension = true;
@@ -67,7 +67,7 @@ pub fn init_cert(org: Option<&str>, out_dir: &Path, force: bool) -> Result<(Path
 }
 
 /// Sign `input` with a C2PA manifest carrying `claim` as the
-/// `com.sigil.watermark` assertion, writing to `output`.
+/// `com.capglyph.watermark` assertion (legacy `com.sigil.watermark`), writing to `output`.
 ///
 /// `manifest_json` optionally merges extra assertions:
 /// `{"label": <json value>, ...}`.
@@ -97,9 +97,9 @@ pub fn sign_image(
         .with_context(|| format!("Failed to load signing key pair from {pkey:?}"))?;
 
     let mut builder = c2pa::Builder::from_context(c2pa::Context::new())
-        .with_definition(r#"{"claim_generator": "sigil"}"#)
+        .with_definition(r#"{"claim_generator": "capglyph"}"#)
         .context("Failed to create manifest builder")?;
-    let mut claim_generator_info = c2pa::ClaimGeneratorInfo::new("sigil");
+    let mut claim_generator_info = c2pa::ClaimGeneratorInfo::new("capglyph");
     claim_generator_info.set_version(env!("CARGO_PKG_VERSION"));
     builder.set_claim_generator_info(claim_generator_info);
 
@@ -112,8 +112,10 @@ pub fn sign_image(
         .context("Failed to add actions assertion")?;
 
     builder
-        .add_assertion("com.sigil.watermark", claim)
+        .add_assertion("com.capglyph.watermark", claim)
         .context("Failed to add watermark assertion")?;
+    // Compat: also write legacy assertion for old readers (dual write, read prefers new)
+    let _ = builder.add_assertion("com.sigil.watermark", claim);
 
     if let Some(path) = manifest_json {
         let raw = std::fs::read_to_string(path)
@@ -207,7 +209,8 @@ pub fn verify_image(input: &Path) -> Result<C2paReport> {
     let (signer_org, valid_from, valid_to) = parse_signer_cert(&cert_chain);
 
     let watermark_claim = manifest
-        .find_assertion::<WatermarkClaim>("com.sigil.watermark")
+        .find_assertion::<WatermarkClaim>("com.capglyph.watermark")
+        .or_else(|_| manifest.find_assertion::<WatermarkClaim>("com.sigil.watermark"))
         .ok();
 
     Ok(C2paReport {

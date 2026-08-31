@@ -22,13 +22,15 @@ pub mod wasm_api;
 // ── CTX-0018: carrier trait + core group ──
 pub mod carrier;
 pub mod core;
-// ── CTX-0022: sigil-core extraction (re-exports) ──
-pub use sigil_core::ecc;
-pub use sigil_core::framing;
-pub use sigil_core::geometry;
-pub use sigil_core::interleave;
-pub use sigil_core::keying;
-pub use sigil_core::placement;
-pub use sigil_core::registration;
-pub use sigil_core::signal;
-pub use sigil_core::spread_spectrum;
+// ── CTX-0022: capglyph-core extraction (re-exports) ──
+pub use capglyph_core::ecc;
+pub use capglyph_core::framing;
+pub use capglyph_core::geometry;
+pub use capglyph_core::interleave;
+pub use capglyph_core::keying;
+pub use capglyph_core::placement;
+pub use capglyph_core::registration;
+pub use capglyph_core::signal;
+pub use capglyph_core::spread_spectrum;
+// Compat aliases for `sigil_core` import path (kept for downstream code)
+pub use capglyph_core as sigil_core;

@@ -1,12 +1,12 @@
 //! Carrier trait — abstracts embed/verify/extract + metrics for each watermark mode.
 //!
-//! This file implements `sigil_core::carrier::Carrier` for DCT/DWT carriers.
-//! The trait itself now lives in `sigil-core` (`sigil_core::carrier::Carrier`);
+//! This file implements `capglyph_core::carrier::Carrier` for DCT/DWT carriers.
+//! The trait itself now lives in `capglyph-core` (`capglyph_core::carrier::Carrier`);
 //! this facade keeps the concrete `DctCarrier`/`DwtCarrier` impls that delegate
-//! to `crate::dct`/`crate::dwt_embed` (which are still in the `sigil` binary crate).
+//! to `crate::dct`/`crate::dwt_embed` (which are still in the `capglyph` binary crate).
 
-pub use sigil_core::carrier::{AlphaCarrier, Carrier};
-pub use sigil_core::placement::Placement;
+pub use capglyph_core::carrier::{AlphaCarrier, Carrier};
+pub use capglyph_core::placement::Placement;
 
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};

@@ -6,9 +6,9 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 #[cfg(not(target_arch = "wasm32"))]
-use sigil::cli::{Cli, Commands};
+use capglyph::cli::{Cli, Commands};
 #[cfg(not(target_arch = "wasm32"))]
-use sigil::{batch, embed, extract, info, strip, verify};
+use capglyph::{batch, embed, extract, info, strip, verify};
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
@@ -43,13 +43,13 @@ fn main() -> anyhow::Result<()> {
         }
         #[cfg(feature = "learned")]
         Commands::FetchModels(args) => {
-            let dir = sigil::learned::model_dir(args.model_dir.as_deref());
-            sigil::learned::fetch_models(&dir)?;
+            let dir = capglyph::learned::model_dir(args.model_dir.as_deref());
+            capglyph::learned::fetch_models(&dir)?;
             println!("Models downloaded to {:?}", dir);
         }
         #[cfg(feature = "c2pa")]
         Commands::C2pa(args) => {
-            let code = sigil::c2pa_cli::run(&args.command)?;
+            let code = capglyph::c2pa_cli::run(&args.command)?;
             if code != 0 {
                 std::process::exit(code);
             }

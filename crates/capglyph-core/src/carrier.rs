@@ -1,9 +1,9 @@
 //! Carrier trait — abstracts embed/verify/extract + metrics for each watermark mode.
 //!
-//! Prepares mechanical extraction of `sigil-core` (DEC-0003 Phase 1). The trait
+//! Prepares mechanical extraction of `capglyph-core` (DEC-0003 Phase 1). The trait
 //! is intentionally object-safe-ish but used as static dispatch via associated
 //! types; `embed.rs` dispatches through `DctCarrier`/`DwtCarrier` impls so the
-//! call sites are ready to become `sigil_core::Carrier` after the crate split.
+//! call sites are ready to become `capglyph_core::Carrier` after the crate split.
 
 use anyhow::Result;
 use image::{ImageBuffer, Rgb};

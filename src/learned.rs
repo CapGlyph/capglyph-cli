@@ -2,12 +2,12 @@
 //!
 //! TrustMark (Adobe, MIT) embeds a ~40-75 bit payload via a trained CNN
 //! encoder/decoder pair. It survives aggressive ordinary edits (JPEG q30,
-//! blur σ2, scale 0.5×) that defeat Sigil's classical DCT/DWT layers, but
+//! blur σ2, scale 0.5×) that defeat CapGlyph's classical DCT/DWT layers (legacy Sigil), but
 //! shares the same limit on generative regeneration (img2img) — see
 //! findings/2026-08-15-q114-trustmark-vs-attacks.md.
 //!
 //! Model files are ONNX weights downloaded once from Adobe's CDN into the
-//! XDG data directory (see `model_dir`). `sigil fetch-models` pre-downloads.
+//! XDG data directory (see `model_dir`). `capglyph fetch-models` pre-downloads (legacy `sigil fetch-models`).
 
 use std::path::{Path, PathBuf};
 
@@ -27,10 +27,13 @@ pub const MODEL_CDN: &str = "https://cai-watermark.adobe.net/watermarking/trustm
 pub const MODEL_FILES: [&str; 2] = ["encoder_Q.onnx", "decoder_Q.onnx"];
 
 /// Resolve the model directory: explicit `--model-dir` wins, then
-/// `$SIGIL_MODEL_DIR`, then the XDG data dir.
+/// `$CAPGLYPH_MODEL_DIR` (fallback `$SIGIL_MODEL_DIR`), then the XDG data dir.
 pub fn model_dir(explicit: Option<&Path>) -> PathBuf {
     if let Some(p) = explicit {
         return p.to_path_buf();
+    }
+    if let Ok(dir) = std::env::var("CAPGLYPH_MODEL_DIR") {
+        return PathBuf::from(dir);
     }
     if let Ok(dir) = std::env::var("SIGIL_MODEL_DIR") {
         return PathBuf::from(dir);
@@ -38,7 +41,13 @@ pub fn model_dir(explicit: Option<&Path>) -> PathBuf {
     #[cfg(feature = "learned")]
     {
         if let Some(base) = directories::BaseDirs::new() {
-            return base.data_dir().join("sigil").join("models");
+            // Prefer new XDG dir `capglyph`, fallback to legacy `sigil` if it exists
+            let capglyph_dir = base.data_dir().join("capglyph").join("models");
+            let sigil_dir = base.data_dir().join("sigil").join("models");
+            if sigil_dir.exists() && !capglyph_dir.exists() {
+                return sigil_dir;
+            }
+            return capglyph_dir;
         }
     }
     PathBuf::from("models")
@@ -77,7 +86,7 @@ pub fn fetch_models(dir: &Path) -> Result<()> {
 /// Build a ureq agent honoring HTTPS_PROXY/HTTP_PROXY/ALL_PROXY.
 ///
 /// ureq does not read proxy environment variables by default; explicit
-/// wiring keeps `sigil fetch-models` working in proxied environments.
+/// wiring keeps `capglyph fetch-models` working in proxied environments (legacy `sigil fetch-models`).
 fn http_agent() -> Result<ureq::Agent> {
     let mut builder = ureq::Agent::config_builder();
     let proxy = std::env::var("HTTPS_PROXY")
@@ -100,7 +109,7 @@ pub fn load(dir: &Path) -> Result<Trustmark> {
     for name in MODEL_FILES {
         if !dir.join(name).exists() {
             return Err(anyhow!(
-                "model file {name} missing in {:?} — run `sigil fetch-models` first",
+                "model file {name} missing in {:?} — run `capglyph fetch-models` first (legacy `sigil fetch-models`)",
                 dir
             ));
         }
