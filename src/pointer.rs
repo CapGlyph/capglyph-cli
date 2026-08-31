@@ -10,7 +10,11 @@
 //! HPKE is deferred (single-primitive agility per `cryptographic-security.md` §5).
 
 #![allow(deprecated)]
-#![allow(clippy::too_many_arguments, clippy::type_complexity, clippy::needless_range_loop)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::needless_range_loop
+)]
 
 use anyhow::{Context, Result};
 use base64::Engine as _;
