@@ -406,7 +406,7 @@ jobs:
         shell: bash
         run: |
           core_dep_version=$(grep -m1 'capglyph-core =' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
-          if curl --fail --silent --show-error --retry 3 \
+          if curl --fail --silent --show-error --retry 3 -A "cargo" \
             "https://crates.io/api/v1/crates/capglyph-core/$core_dep_version" >/dev/null; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
@@ -436,7 +436,7 @@ jobs:
           set -euo pipefail
           core_dep_version=$(grep -m1 'capglyph-core =' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
           for attempt in {1..30}; do
-            if curl --fail --silent --show-error \
+            if curl --fail --silent --show-error -A "cargo" \
               "https://crates.io/api/v1/crates/capglyph-core/$core_dep_version" >/dev/null; then
               exit 0
             fi
@@ -454,7 +454,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          if curl --fail --silent --show-error --retry 3 \
+          if curl --fail --silent --show-error --retry 3 -A "cargo" \
             "https://crates.io/api/v1/crates/capglyph-server/$version" >/dev/null; then
             echo "::notice::capglyph-server $version is already present on crates.io; skipping publication."
           else
@@ -470,7 +470,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          if curl --fail --silent --show-error --retry 3 \
+          if curl --fail --silent --show-error --retry 3 -A "cargo" \
             "https://crates.io/api/v1/crates/capglyph/$version" >/dev/null; then
             echo "::notice::capglyph $version is already present on crates.io; skipping publication."
           else

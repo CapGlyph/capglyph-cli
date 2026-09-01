@@ -1,6 +1,6 @@
 [package]
 name = "capglyph-server"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "CapGlyph credential server (sigild) — DB + atomic consume + revocation/audit"
 license = "Apache-2.0"
