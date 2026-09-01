@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "capglyph"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aead",
  "anyhow",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "capglyph-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aead",
  "anyhow",
