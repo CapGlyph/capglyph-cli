@@ -405,7 +405,7 @@ jobs:
         id: core-registry
         shell: bash
         run: |
-          core_dep_version=$(grep -m1 'capglyph-core' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
+          core_dep_version=$(grep -m1 'capglyph-core =' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
           if curl --fail --silent --show-error --retry 3 \
             "https://crates.io/api/v1/crates/capglyph-core/$core_dep_version" >/dev/null; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -434,7 +434,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          core_dep_version=$(grep -m1 'capglyph-core' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
+          core_dep_version=$(grep -m1 'capglyph-core =' capglyph-cli/Cargo.toml | sed -n 's/.*version *= *"\([^"]*\)".*/\1/p')
           for attempt in {1..30}; do
             if curl --fail --silent --show-error \
               "https://crates.io/api/v1/crates/capglyph-core/$core_dep_version" >/dev/null; then
