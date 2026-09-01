@@ -151,6 +151,10 @@ jobs:
   publish-aur:
     name: Publish to AUR
     needs: release-github
+    # AUR credentials and its source-package dependency snapshots are external
+    # distribution concerns. Their failure is visible in this job, but must not
+    # invalidate an already-created GitHub Release.
+    continue-on-error: true
     runs-on: ubuntu-latest
     container: archlinux:latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -277,6 +281,9 @@ jobs:
   sync-brew:
     name: Sync Brew Formula
     needs: release-github
+    # The GitHub Release remains authoritative when the external tap is absent
+    # or its token lacks permission. The failed job remains visible to maintainers.
+    continue-on-error: true
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -334,6 +341,9 @@ jobs:
   sync-scoop:
     name: Sync Scoop Manifest
     needs: release-github
+    # The GitHub Release remains authoritative when the external bucket is absent
+    # or its token lacks permission. The failed job remains visible to maintainers.
+    continue-on-error: true
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -377,3 +387,93 @@ jobs:
           git add bucket/capglyph.json
           git commit -m "Update CapGlyph to ${CLEAN_VERSION}" || true
           git push origin main
+
+  publish-crates:
+    name: Publish Rust crates to crates.io
+    needs: release-github
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout CLI tag
+        uses: actions/checkout@v7.0.1
+        with:
+          path: capglyph-cli
+
+      - name: Check capglyph-core registry version
+        id: core-registry
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if curl --fail --silent --show-error --retry 3 \
+            "https://crates.io/api/v1/crates/capglyph-core/$version" >/dev/null; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping crates.io publication because capglyph-core $version is not on crates.io. Publish capglyph-core first."
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.core-registry.outputs.ready == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify tag and package versions
+        if: steps.core-registry.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_version="${GITHUB_REF_NAME#v}"
+          cli_version=$(grep -m1 '^version = ' capglyph-cli/Cargo.toml | cut -d'"' -f2)
+          server_version=$(grep -m1 '^version = ' capglyph-cli/crates/capglyph-server/Cargo.toml | cut -d'"' -f2)
+          test "$cli_version" = "$expected_version"
+          test "$server_version" = "$expected_version"
+
+      - name: Wait for capglyph-core registry visibility
+        if: steps.core-registry.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error \
+              "https://crates.io/api/v1/crates/capglyph-core/$version" >/dev/null; then
+              exit 0
+            fi
+            echo "Waiting for crates.io visibility (attempt $attempt/30)."
+            sleep 10
+          done
+          echo "::error::capglyph-core $version did not become visible on crates.io."
+          exit 1
+
+      - name: Verify and publish capglyph-server
+        if: steps.core-registry.outputs.ready == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if curl --fail --silent --show-error --retry 3 \
+            "https://crates.io/api/v1/crates/capglyph-server/$version" >/dev/null; then
+            echo "::notice::capglyph-server $version is already present on crates.io; skipping publication."
+          else
+            (cd capglyph-cli && cargo publish -p capglyph-server --dry-run)
+            (cd capglyph-cli && cargo publish -p capglyph-server --locked)
+          fi
+
+      - name: Verify and publish capglyph
+        if: steps.core-registry.outputs.ready == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if curl --fail --silent --show-error --retry 3 \
+            "https://crates.io/api/v1/crates/capglyph/$version" >/dev/null; then
+            echo "::notice::capglyph $version is already present on crates.io; skipping publication."
+          else
+            (cd capglyph-cli && cargo publish -p capglyph --dry-run)
+            (cd capglyph-cli && cargo publish -p capglyph --locked)
+          fi

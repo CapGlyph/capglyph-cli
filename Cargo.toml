@@ -25,10 +25,9 @@ path = "src/main.rs"
 # capglyph-core is now a standalone repo (CTX-0040). Isolated monorepo layout
 # keeps it at ../capglyph-core sibling (local: /capglyph/capglyph-core).
 # CI checks out CapGlyph/capglyph-core alongside capglyph-cli and vectomancy
-# so this sibling path resolves. Future crates.io publish will switch to
-# `capglyph-core = "0.1"` version dep + `capglyph-core = { path = "../capglyph-core" }`
-# dev override via [patch.crates-io] if needed.
-capglyph-core = { path = "../capglyph-core" }
+# so this sibling path resolves. The version requirement is retained by
+# `cargo publish`, so the packaged crate resolves capglyph-core from crates.io.
+capglyph-core = { path = "../capglyph-core", version = "0.1.0" }
 
 # Image I/O
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
@@ -39,8 +38,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # flate2/rand into the wasm graph for nothing.
 # Isolated layout: `capglyph-cli` expects `../vectomancy` sibling (CI: `sigil` + `vectomancy`
 # siblings; local: symlink `/capglyph/vectomancy -> /vectomancy/vectomancy`).
-vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster" }
-vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry" }
+vectomancy-raster = { path = "../vectomancy/crates/vectomancy-raster", version = "8.1.0" }
+vectomancy-geometry = { path = "../vectomancy/crates/vectomancy-geometry", version = "8.1.0" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -85,7 +84,7 @@ time = { version = "0.3", features = ["formatting"], optional = true }
 clap = { version = "4.5", features = ["derive"] }
 glob = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-capglyph-server = { path = "crates/capglyph-server" }
+capglyph-server = { path = "crates/capglyph-server", version = "0.1.0" }
 rand = "0.8"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 
