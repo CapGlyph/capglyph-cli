@@ -446,6 +446,20 @@ jobs:
           echo "::error::capglyph-core $core_dep_version did not become visible on crates.io."
           exit 1
 
+      - name: Checkout capglyph-core (path dependency)
+        if: steps.core-registry.outputs.ready == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: CapGlyph/capglyph-core
+          path: capglyph-core
+
+      - name: Checkout vectomancy (path dependency)
+        if: steps.core-registry.outputs.ready == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Xuepoo/vectomancy
+          path: vectomancy
+
       - name: Verify and publish capglyph-server
         if: steps.core-registry.outputs.ready == 'true'
         env:
