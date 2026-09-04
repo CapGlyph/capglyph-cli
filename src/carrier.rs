@@ -14,16 +14,6 @@ use image::{ImageBuffer, Rgb};
 use crate::geometry::GeometryFile;
 use crate::registration::{CoverVault, HybridMatch, Registration};
 
-/// Convert core `Placement` to legacy CLI `PlacementStrategy` for the
-/// `crate::dct`/`crate::dwt_embed` primitives that still take the CLI type.
-fn to_cli_placement(p: &Placement) -> crate::cli::PlacementStrategy {
-    match p {
-        Placement::Skeleton => crate::cli::PlacementStrategy::Skeleton,
-        Placement::Prng => crate::cli::PlacementStrategy::Prng,
-        Placement::Edge => crate::cli::PlacementStrategy::Edge,
-    }
-}
-
 /// Convert CLI `PlacementStrategy` to core `Placement` (for tests that still
 /// construct the CLI type and need to call core APIs).
 pub fn to_core_placement(p: &crate::cli::PlacementStrategy) -> Placement {
@@ -40,8 +30,8 @@ pub fn to_core_placement(p: &crate::cli::PlacementStrategy) -> Placement {
 pub struct DctCarrier;
 
 impl Carrier for DctCarrier {
-    const NAME: &'static str = "dct";
-    type Metrics = crate::dct::DctSignalMetrics;
+    const NAME: &'static str = capglyph_core::carrier::DctCarrier::NAME;
+    type Metrics = <capglyph_core::carrier::DctCarrier as Carrier>::Metrics;
 
     fn embed(
         img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
@@ -50,13 +40,7 @@ impl Carrier for DctCarrier {
         key: Option<&str>,
         placement: &Placement,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dct::embed(
-            img,
-            geometry,
-            recipient_id,
-            key,
-            &to_cli_placement(placement),
-        )
+        capglyph_core::carrier::DctCarrier::embed(img, geometry, recipient_id, key, placement)
     }
 
     fn verify(
@@ -64,24 +48,23 @@ impl Carrier for DctCarrier {
         geometry: &GeometryFile,
         placement: &Placement,
     ) -> Result<Self::Metrics> {
-        crate::dct::verify(img, geometry, &to_cli_placement(placement))
+        capglyph_core::carrier::DctCarrier::verify(img, geometry, placement)
     }
 
     fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
-        crate::dct::verify_secret(img, key)
+        capglyph_core::carrier::DctCarrier::verify_secret(img, key)
     }
 
     fn extract(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, id_length: usize) -> Result<String> {
-        let (w, h) = img.dimensions();
-        crate::extract::extract_from_dct(img, id_length, w, h)
+        capglyph_core::carrier::DctCarrier::extract(img, id_length)
     }
 
     fn metrics_is_present(metrics: &Self::Metrics, threshold: f64) -> bool {
-        metrics.is_present(threshold)
+        capglyph_core::carrier::DctCarrier::metrics_is_present(metrics, threshold)
     }
 
     fn metrics_mean_signal(metrics: &Self::Metrics) -> f64 {
-        metrics.mean_signal_value()
+        capglyph_core::carrier::DctCarrier::metrics_mean_signal(metrics)
     }
 }
 
@@ -89,17 +72,12 @@ impl Carrier for DctCarrier {
 
 /// DWT-domain carrier (Haar LH band).
 ///
-/// Only `Placement::Skeleton` is currently supported. `Edge` and
-/// `Prng` are rejected fail-closed (`anyhow::Error` containing "unsupported
-/// DWT placement") so that callers cannot silently receive a Skeleton result
-/// when they asked for a different placement arm. This keeps `DwtCarrier`
-/// consistent with `DctCarrier` (which does honour all three placements) and
-/// with `verify.rs` which now forwards the placement to `dwt_embed::verify`.
+/// Skeleton, Edge, and Prng placement arms are fully supported via core DWT carrier delegation.
 pub struct DwtCarrier;
 
 impl Carrier for DwtCarrier {
-    const NAME: &'static str = "dwt";
-    type Metrics = crate::dwt_embed::DwtSignalMetrics;
+    const NAME: &'static str = capglyph_core::carrier::DwtCarrier::NAME;
+    type Metrics = <capglyph_core::carrier::DwtCarrier as Carrier>::Metrics;
 
     fn embed(
         img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
@@ -108,13 +86,7 @@ impl Carrier for DwtCarrier {
         key: Option<&str>,
         placement: &Placement,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dwt_embed::embed(
-            img,
-            geometry,
-            recipient_id,
-            key,
-            &to_cli_placement(placement),
-        )
+        capglyph_core::carrier::DwtCarrier::embed(img, geometry, recipient_id, key, placement)
     }
 
     fn embed_with_strength(
@@ -125,12 +97,12 @@ impl Carrier for DwtCarrier {
         placement: &Placement,
         strength: f32,
     ) -> Result<(u64, Vec<(u32, u32)>)> {
-        crate::dwt_embed::embed_with_strength(
+        capglyph_core::carrier::DwtCarrier::embed_with_strength(
             img,
             geometry,
             recipient_id,
             key,
-            &to_cli_placement(placement),
+            placement,
             strength,
         )
     }
@@ -140,24 +112,23 @@ impl Carrier for DwtCarrier {
         geometry: &GeometryFile,
         placement: &Placement,
     ) -> Result<Self::Metrics> {
-        crate::dwt_embed::verify(img, geometry, &to_cli_placement(placement))
+        capglyph_core::carrier::DwtCarrier::verify(img, geometry, placement)
     }
 
     fn verify_secret(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, key: &str) -> f64 {
-        crate::dwt_embed::verify_secret(img, key)
+        capglyph_core::carrier::DwtCarrier::verify_secret(img, key)
     }
 
     fn extract(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, id_length: usize) -> Result<String> {
-        let (w, h) = img.dimensions();
-        crate::extract::extract_from_dwt(img, id_length, w, h)
+        capglyph_core::carrier::DwtCarrier::extract(img, id_length)
     }
 
     fn metrics_is_present(metrics: &Self::Metrics, threshold: f64) -> bool {
-        metrics.is_present(threshold)
+        capglyph_core::carrier::DwtCarrier::metrics_is_present(metrics, threshold)
     }
 
     fn metrics_mean_signal(metrics: &Self::Metrics) -> f64 {
-        metrics.mean_signal_value()
+        capglyph_core::carrier::DwtCarrier::metrics_mean_signal(metrics)
     }
 }
 
@@ -196,13 +167,7 @@ impl DctCarrier {
             crate::ecc::Profile::RsInterleaved { .. } => crate::ecc::bytes_to_bits(&coded),
         };
         // Delegate to DCT differential embed
-        crate::dct::embed_coded_bits(
-            img,
-            geometry,
-            &coded_bits,
-            keys,
-            &to_cli_placement(placement),
-        )
+        capglyph_core::dct::embed_coded_bits(img, geometry, &coded_bits, keys, placement)
     }
 
     /// Extract and open a framed payload. Returns raw payload bytes after ECC
@@ -236,7 +201,8 @@ impl DctCarrier {
             };
             let sealed_len = crate::framing::sealed_len(len, &params);
             let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
-            let soft = crate::dct::extract_coded_bits_soft_with_hint(img, keys, Some(need_bits))?;
+            let soft =
+                capglyph_core::dct::extract_coded_bits_soft_with_hint(img, keys, Some(need_bits))?;
             let mut decoded_sealed = crate::ecc::decode(&soft, profile)?;
             // BCH pads to k-boundary; truncate to actual sealed length before open
             if decoded_sealed.len() > sealed_len {
@@ -245,7 +211,7 @@ impl DctCarrier {
             let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
             return Ok(payload);
         }
-        let soft_all = crate::dct::extract_coded_bits_soft(img, keys)?;
+        let soft_all = capglyph_core::dct::extract_coded_bits_soft(img, keys)?;
         // Auto-detect: try slicing at various repetition-aligned lengths until success
         // For now, just try full and then progressive 8-aligned prefixes.
         let steps = soft_all.len() / 8;
@@ -317,7 +283,7 @@ impl DctCarrier {
             };
             let sealed_len = crate::framing::sealed_len(len, &params);
             let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
-            let soft = crate::dct::extract_coded_bits_soft_residual(
+            let soft = capglyph_core::dct::extract_coded_bits_soft_residual(
                 original,
                 aligned,
                 keys,
@@ -330,7 +296,8 @@ impl DctCarrier {
             let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
             return Ok(payload);
         }
-        let soft = crate::dct::extract_coded_bits_soft_residual(original, aligned, keys, None)?;
+        let soft =
+            capglyph_core::dct::extract_coded_bits_soft_residual(original, aligned, keys, None)?;
         let decoded_sealed = crate::ecc::decode(&soft, profile)?;
         let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
         Ok(payload)
@@ -448,13 +415,7 @@ impl DwtCarrier {
             }
             crate::ecc::Profile::RsInterleaved { .. } => crate::ecc::bytes_to_bits(&coded),
         };
-        crate::dwt_embed::embed_coded_bits(
-            img,
-            geometry,
-            &coded_bits,
-            keys,
-            &to_cli_placement(placement),
-        )
+        capglyph_core::dwt_embed::embed_coded_bits(img, geometry, &coded_bits, keys, placement)
     }
 
     pub fn extract_framed(
@@ -484,8 +445,11 @@ impl DwtCarrier {
             };
             let sealed_len = crate::framing::sealed_len(len, &params);
             let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
-            let soft =
-                crate::dwt_embed::extract_coded_bits_soft_with_hint(img, keys, Some(need_bits))?;
+            let soft = capglyph_core::dwt_embed::extract_coded_bits_soft_with_hint(
+                img,
+                keys,
+                Some(need_bits),
+            )?;
             let mut decoded_sealed = crate::ecc::decode(&soft, profile)?;
             if decoded_sealed.len() > sealed_len {
                 decoded_sealed.truncate(sealed_len);
@@ -493,7 +457,7 @@ impl DwtCarrier {
             let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
             return Ok(payload);
         }
-        let soft_all = crate::dwt_embed::extract_coded_bits_soft(img, keys)?;
+        let soft_all = capglyph_core::dwt_embed::extract_coded_bits_soft(img, keys)?;
         let steps = soft_all.len() / 8;
         for k in (1..=steps).rev() {
             let end = k * 8;
@@ -541,7 +505,7 @@ impl DwtCarrier {
             };
             let sealed_len = crate::framing::sealed_len(len, &params);
             let need_bits = crate::ecc::coded_bits_len(sealed_len, profile);
-            let soft = crate::dwt_embed::extract_coded_bits_soft_residual(
+            let soft = capglyph_core::dwt_embed::extract_coded_bits_soft_residual(
                 original,
                 aligned,
                 keys,
@@ -554,8 +518,9 @@ impl DwtCarrier {
             let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
             return Ok(payload);
         }
-        let soft =
-            crate::dwt_embed::extract_coded_bits_soft_residual(original, aligned, keys, None)?;
+        let soft = capglyph_core::dwt_embed::extract_coded_bits_soft_residual(
+            original, aligned, keys, None,
+        )?;
         let decoded_sealed = crate::ecc::decode(&soft, profile)?;
         let (_hdr, payload) = crate::framing::open(&decoded_sealed, keys.k_mac())?;
         Ok(payload)

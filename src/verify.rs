@@ -8,6 +8,8 @@ use crate::geometry::GeometryFile;
 use crate::signal::SignalMetrics;
 use anyhow::{Context, Result};
 #[cfg(not(target_arch = "wasm32"))]
+use capglyph_core::Carrier;
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]
 use tracing::info;
@@ -44,8 +46,8 @@ pub fn run(args: &VerifyArgs) -> Result<bool> {
             EmbedMode::Dct | EmbedMode::Dwt => {
                 let rgb = img.to_rgb8();
                 let secret_mean = match args.mode {
-                    EmbedMode::Dct => crate::dct::verify_secret(&rgb, key),
-                    EmbedMode::Dwt => crate::dwt_embed::verify_secret(&rgb, key),
+                    EmbedMode::Dct => capglyph_core::carrier::DctCarrier::verify_secret(&rgb, key),
+                    EmbedMode::Dwt => capglyph_core::carrier::DwtCarrier::verify_secret(&rgb, key),
                     EmbedMode::Alpha | EmbedMode::Learned => unreachable!(),
                 };
                 let secret_present = secret_mean >= SECRET_MEAN_THRESHOLD;
@@ -352,10 +354,11 @@ fn verify_dwt(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
     };
 
     let rgb = img.to_rgb8();
+    let placement = crate::carrier::to_core_placement(&args.placement);
     let metrics = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
-        crate::dwt_embed::verify_v2(&rgb, &geometry, &args.placement)?
+        capglyph_core::dwt_embed::verify_v2(&rgb, &geometry, &placement)?
     } else {
-        crate::dwt_embed::verify(&rgb, &geometry, &args.placement)?
+        capglyph_core::carrier::DwtCarrier::verify(&rgb, &geometry, &placement)?
     };
 
     let present = if matches!(args.protocol_version, crate::cli::ProtocolVersion::V2) {
