@@ -11,6 +11,30 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  package-metadata:
+    name: Native package metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: capglyph-cli
+
+      - name: Install nFPM
+        working-directory: capglyph-cli
+        run: |
+          set -euo pipefail
+          mkdir -p ../recording/package-audit/tooling
+          nfpm_releases=https://github.com/goreleaser/nfpm/releases
+          curl --fail --silent --show-error --location \
+            "$nfpm_releases/download/v2.37.1/nfpm_2.37.1_Linux_x86_64.tar.gz" \
+            | tar -xz -C ../recording/package-audit/tooling nfpm
+
+      - name: Build and inspect DEB, RPM, and Arch metadata
+        working-directory: capglyph-cli
+        env:
+          NFPM: ${{ github.workspace }}/recording/package-audit/tooling/nfpm
+        run: ./scripts/test-package-metadata.sh ../recording/package-audit/ci
+
   test:
     name: Test & Lint
     runs-on: ubuntu-latest
