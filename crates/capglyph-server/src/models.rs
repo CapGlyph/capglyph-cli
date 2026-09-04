@@ -2,6 +2,26 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub const API_VERSION: u8 = 1;
+
+/// Authorization data supplied by trusted ingress after caller authentication.
+///
+/// Possession of a credential token proves identity evidence only. It does not
+/// bypass the subject or scope checks represented by this context.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthorizationContext {
+    pub actor_id: Option<Uuid>,
+    pub requested_scope: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VersionResponse {
+    pub api_version: u8,
+    pub wire_version: u8,
+    pub spec_version: String,
+    pub supported_versions: Vec<u8>,
+}
+
 // ── Covers ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -106,6 +126,7 @@ pub struct NewAuditEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyRequest {
     pub token_id: String, // base64url or hex 32 chars
+    pub requested_scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +144,7 @@ pub struct ConsumeRequest {
     pub token_id: String,
     pub idempotency_key: String,
     pub actor_id: Option<Uuid>,
+    pub requested_scope: Option<String>,
     pub request_hash: Option<Vec<u8>>,
 }
 
@@ -137,6 +159,7 @@ pub struct ConsumeResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RevokeRequest {
     pub actor_id: Option<Uuid>,
+    pub token_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

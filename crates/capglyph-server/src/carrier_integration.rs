@@ -21,7 +21,9 @@ pub fn encode_credential_token(token_id: &[u8; 16], k_mac: &[u8; 32]) -> Vec<u8>
         payload_type: PayloadType::Credential,
         flags: 0,
     };
-    let sealed = framing::seal(token_id, &params, k_mac);
+    let payload = framing::credential_payload(token_id);
+    let sealed = framing::try_seal_typed(&payload, &params, k_mac)
+        .expect("canonical v1 Credential payload is always sealable");
     ecc::encode(&sealed, Profile::Repetition8)
 }
 
@@ -32,13 +34,8 @@ pub fn decode_credential_token(coded: &[u8], k_mac: &[u8; 32]) -> anyhow::Result
     // For MVP we use hard-bit path; real server uses soft_bits via SignalMetrics.
     let bits: Vec<bool> = coded.iter().map(|&b| b != 0).collect();
     let sealed = ecc::decode_hard(&bits, Profile::Repetition8)?;
-    let (_hdr, payload) = framing::open(&sealed, k_mac)?;
-    if payload.len() != 16 {
-        anyhow::bail!("expected 16-byte token_id, got {}", payload.len());
-    }
-    let mut out = [0u8; 16];
-    out.copy_from_slice(&payload);
-    Ok(out)
+    let (header, payload) = framing::open_typed(&sealed, k_mac)?;
+    framing::credential_token_id(&payload, header.flags).map_err(Into::into)
 }
 
 /// Soft-bit decode path (demonstrates `magnitude → LLR` integration).
@@ -49,13 +46,8 @@ pub fn decode_credential_token_soft(
     k_mac: &[u8; 32],
 ) -> anyhow::Result<[u8; 16]> {
     let sealed = ecc::decode(soft, Profile::Repetition8)?;
-    let (_hdr, payload) = framing::open(&sealed, k_mac)?;
-    if payload.len() != 16 {
-        anyhow::bail!("expected 16-byte token_id, got {}", payload.len());
-    }
-    let mut out = [0u8; 16];
-    out.copy_from_slice(&payload);
-    Ok(out)
+    let (header, payload) = framing::open_typed(&sealed, k_mac)?;
+    framing::credential_token_id(&payload, header.flags).map_err(Into::into)
 }
 
 #[cfg(test)]
