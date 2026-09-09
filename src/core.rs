@@ -1,7 +1,7 @@
 //! Core primitives grouped for future `capglyph-core` extraction.
 //!
 //! This module re-exports the foundational primitives that have been moved
-//! into the `capglyph-core` crate (CTX-0022, legacy `sigil-core`). The re-export
+//! into the `capglyph-core` crate (CTX-0022). The re-export
 //! keeps the public API backwards compatible: `crate::geometry`, `crate::signal`,
 //! etc. remain valid via `pub use capglyph_core::*` in `lib.rs`, while new
 //! internal code should prefer `capglyph_core::*` directly or `crate::core::*`.

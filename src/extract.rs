@@ -1,6 +1,6 @@
-//! `capglyph extract` — recover embedded recipient ID from a watermarked image (legacy `sigil extract`).
+//! `capglyph extract` — recover embedded recipient ID from a watermarked image.
 //!
-//! Reads the spread-spectrum bit stream embedded during `capglyph embed --recipient-id` (legacy `sigil embed`)
+//! Reads the spread-spectrum bit stream embedded during `capglyph embed --recipient-id`
 //! and reconstructs the original ID string.
 
 #[cfg(not(target_arch = "wasm32"))]

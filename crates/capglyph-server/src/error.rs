@@ -1,4 +1,4 @@
-//! Central error type for capglyph-server (sigild).
+//! Central error type for capglyph-server (capglyphd).
 
 pub use capglyph_core::error::{CapGlyphError, ErrorCode};
 

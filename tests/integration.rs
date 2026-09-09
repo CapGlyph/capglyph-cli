@@ -1,4 +1,4 @@
-/// Integration tests for Sigil embed / verify / strip pipeline.
+/// Integration tests for CapGlyph embed / verify / strip pipeline.
 ///
 /// Each test generates a small synthetic PNG in-process (no fixture files needed)
 /// and runs the subcommand logic directly via the public module functions.

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 
 /// Watermark metadata carried inside the C2PA manifest assertion
-/// (`com.capglyph.watermark`, legacy `com.sigil.watermark`), mirroring the pixel-watermark embed parameters.
+/// (`com.capglyph.watermark`), mirroring the pixel-watermark embed parameters.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WatermarkClaim {
     pub mode: String,
@@ -67,7 +67,8 @@ pub fn init_cert(org: Option<&str>, out_dir: &Path, force: bool) -> Result<(Path
 }
 
 /// Sign `input` with a C2PA manifest carrying `claim` as the
-/// `com.capglyph.watermark` assertion (legacy `com.sigil.watermark`), writing to `output`.
+/// `com.capglyph.watermark` assertion, writing to `output`.
+/// Also writes `com.sigil.watermark` for compatibility with older readers.
 ///
 /// `manifest_json` optionally merges extra assertions:
 /// `{"label": <json value>, ...}`.

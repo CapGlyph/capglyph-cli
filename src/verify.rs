@@ -204,7 +204,7 @@ fn verify_dct(img: &image::DynamicImage, args: &VerifyArgs) -> Result<bool> {
                 let seed = geom.prng_seed.ok_or_else(|| {
                     anyhow::anyhow!(
                         "No skeleton paths and no PRNG seed in geometry file. \
-                 Re-embed with current Sigil version to generate a seed."
+                 Re-embed with current CapGlyph version to generate a seed."
                     )
                 })?;
                 crate::dct::prng_blocks_from_seed(seed, iw, ih)

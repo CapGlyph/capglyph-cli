@@ -1,4 +1,4 @@
-//! capglyph-server (sigild) — credential vault MVP
+//! capglyph-server (capglyphd) — credential vault MVP
 //!
 //! Implements `docs/research/media-credential/usage/credential-design.md` §4:
 //! `covers / credentials / credential_consumptions / audit_events` with

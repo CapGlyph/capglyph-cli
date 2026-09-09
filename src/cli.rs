@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
-/// Embedding mode for `capglyph embed` (legacy `sigil embed`).
+/// Embedding mode for `capglyph embed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 pub enum EmbedMode {
@@ -54,7 +54,7 @@ impl std::fmt::Display for EmbedMode {
     version,
     author,
     about = "Invisible structural watermark for images",
-    long_about = "CapGlyph (formerly Sigil) embeds a sub-perceptual structural watermark derived from the image's own \
+    long_about = "CapGlyph embeds a sub-perceptual structural watermark derived from the image's own \
                   geometry. The watermark is invisible to humans but detectable by machines, and \
                   is destroyed by PNG→JPG conversion or screenshots — signalling tampering."
 )]
@@ -168,7 +168,7 @@ pub struct C2paSignArgs {
     #[arg(long, default_value = "capture")]
     pub source_type: String,
 
-    /// Recipient ID to record in the com.capglyph.watermark assertion (legacy com.sigil.watermark)
+    /// Recipient ID to record in the com.capglyph.watermark assertion
     /// (requires --mode)
     #[arg(long, requires = "mode")]
     pub recipient_id: Option<String>,
@@ -177,7 +177,7 @@ pub struct C2paSignArgs {
     #[arg(long, requires = "recipient_id")]
     pub mode: Option<EmbedMode>,
 
-    /// Sigil HMAC secret (marks the claim as keyed; the secret itself is
+    /// CapGlyph HMAC secret (marks the claim as keyed; the secret itself is
     /// never stored in the manifest)
     #[arg(long)]
     pub key: Option<String>,
@@ -198,7 +198,7 @@ pub struct EmbedArgs {
     /// Input image path (.png recommended; .jpg is accepted but output is always PNG)
     pub input: PathBuf,
 
-    /// Output path (default: <stem>_capglyph.png next to input, legacy _sigil.png)
+    /// Output path (default: <stem>_capglyph.png next to input)
     /// For JPEG output, use --output file.jpg or --format jpg in batch mode
     #[arg(short, long)]
     pub output: Option<PathBuf>,
@@ -274,7 +274,7 @@ pub struct EmbedArgs {
     pub dwt_strength: f32,
 
     /// Also sign the output with a C2PA manifest carrying the embed
-    /// parameters as the com.capglyph.watermark assertion (legacy com.sigil.watermark)
+    /// parameters as the com.capglyph.watermark assertion
     #[cfg(feature = "c2pa")]
     #[arg(long, requires_all = ["c2pa_cert", "c2pa_pkey"])]
     pub c2pa: bool,

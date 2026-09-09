@@ -1,58 +1,45 @@
 # CapGlyph Product Roadmap
 
-**Last updated:** 2026-09-01 (v0.1.0 release status synchronized)
-**Status:** Open-source CLI shipped (v0.1.0, formerly Sigil v0.2.0) → open-core monetization
+**Status:** Product direction and historical release milestones, reconciled 2026-09-05. Not a release qualification or commitment to build every listed service. Current checkout manifests are CLI/server 0.1.7 and core 0.1.0; publication status must be checked separately.
 
----
+## Product boundary
 
-## Product Vision
+CapGlyph provides image-watermark/payload primitives, a local CLI, optional TrustMark and C2PA integrations, and a token-oriented reference credential/message server. Presence detection, recovered IDs, authenticated payloads, factual provenance and legal ownership are different endpoints.
 
-CapGlyph (formerly Sigil) provides invisible, robust image watermarking for leak source
-identification, copyright attribution, and tamper detection. Unlike
-metadata-based solutions (EXIF/IPTC) that are trivially stripped, CapGlyph
-embeds machine-verifiable signals directly into image pixels/frequency data,
-with an open, auditable scheme.
+The core now owns DCT/DWT implementations and three placement arms. JS/Python/Go provide local framing but not complete image SDKs. Their generic HTTP clients currently do not match the reference server. Read the [spec implementation reconciliation](../../capglyph-spec/docs/implementation-reconciliation.md) and [server README](../crates/capglyph-server/README.md) before making product claims.
 
-**Core value proposition:**
+## Recorded delivery, not blanket certification
 
-- Invisible to humans (PSNR 42–52 dB measured)
-- Invisible to VLMs (validated on Gemini/Claude/GPT at all effort levels)
-- Survives aggressive ordinary edits (learned mode: JPEG q30, blur σ2, scale 0.5×)
-- Per-recipient tracing with geometry-free extraction
-- HMAC-keyed attribution surviving collusion, blocking forgery
-- Self-hosted, open source (Apache-2.0), zero per-image cost
+- Four carrier modes: alpha, DCT, DWT and feature-gated TrustMark.
+- Separate presence, recipient-ID and keyed-signal operations.
+- CLI/core migration, local build/CI configuration, license and release-history records.
+- Optional C2PA signing/verification; generated self-signed certificates require independent trust establishment.
+- Historical Q-series observations and narrower frozen research studies.
 
-## Phase 1: Open-Source Release (complete)
+The earlier v0.1.0 release checklist is historical; [CHANGELOG.md](../CHANGELOG.md) preserves release history. PSNR ranges and a VLM failing to notice a watermark do not establish human invisibility, resistance to steganalysis, or invisibility to all model versions/settings. Learned robustness and collusion observations are conditional on their exact experiment. No algorithm here generally blocks forgery or proves authorship merely by recovering a signal. Self-hosting still has compute, storage and operational costs.
 
-- [x] Four watermark modes (alpha/dct/dwt/learned)
-- [x] Three-layer security model (public/ID/secret)
-- [x] Attack matrix verified and published (Q-series findings)
-- [x] CI/CD, license, docs, README (EN/zh-CN), changelog
-- [x] GitHub repository `CapGlyph/capglyph-cli` (formerly under Xuepoo organization, now redirects)
+## Open implementation gates
 
-## Phase 2: Adoption & Trust Building (next)
+CarryCtx is authoritative; the following is a snapshot, not a new task assignment:
 
-- [x] GitHub Release v0.1.0 binaries (published 2026-08-31; Linux x86_64/aarch64, macOS x86_64/aarch64, Windows x86_64; Linux tar.gz/deb/rpm/pkg.tar.zst assets)
-- [ ] Interactive web demo (upload → attack → extract)
-- [ ] Public attack-matrix page (open weakness disclosure vs Steg.AI)
-- [ ] Hacker News / security-community launch
-- [x] C2PA manifest integration (pixel watermark + content credentials)
+- `CGCLI-0002` — G11 image issue/verify/consume path: **ready**.
+- `CGCLI-0004` — product-gate revalidation: **planned**.
+- JS/Python/Go local image-carrier tasks (`CGJS/CGPY/CGGO-0002`): **ready**.
+- Explicit SDK/current-server API reconciliation is still needed despite historical completion of framing/API-labelled tasks.
 
-## Phase 3: Monetization (demand-driven, after users exist)
+The end-to-end image service, persisted cover vault and production key/ingress deployment are not supplied by token-route success. Provenance retrieval/graph research is a separate track and remains paused for new experiments at the user's request.
 
-| Path               | Offering                                                            | Anchor pricing               |
-| ------------------ | ------------------------------------------------------------------- | ---------------------------- |
-| Cloud service      | Hosted monitoring: embed at scale + periodic leak crawling + alerts | €99–299/mo (Imatag: €299/mo) |
-| Enterprise support | SLA, priority response, tuning consultation                         | $5–50k/yr                    |
-| Custom development | Video extension, format support, integration                        | project-based                |
+## Candidate adoption work
 
-Competitive positioning: "the GnuPG of digital-image forensics" — open,
-auditable, self-hosted. Steg.AI cannot respond on transparency (learned
-model parameters are its moat) or on price (per-image SaaS cost).
+These are proposals, not implemented offerings or an authorization to publish:
 
-## Explicit Non-Goals
+- Interactive local demonstration with endpoint-specific success/failure reporting.
+- Public benchmark presentation linked to reproducible evidence and known weaknesses.
+- Community feedback and integration examples after the supported surface is explicit.
+- Hosting, support or custom integration only when demand and operational requirements are established.
 
-- Anti-AI-training cloaking (Glaze/Nightshade territory)
-- Screen-capture robustness (requires learned re-capture training — Steg.AI
-  territory; revisit only as research project)
-- Video/audio/document modes (not before market demand)
+Earlier competitor prices and revenue ranges were unverified planning anchors, not current market data or an approved pricing schedule. No exclusivity, competitive-superiority or patentability conclusion is implied.
+
+## Non-goals and deferred directions
+
+Copy-prevention, guaranteed known-cover resistance, anti-training cloaking, generic screenshot/print-scan robustness, and universal regeneration resistance are not product promises. Video/audio/document support and cross-platform capture studies require separate user-authorized scope and evidence.

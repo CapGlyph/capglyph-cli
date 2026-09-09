@@ -87,7 +87,7 @@ fn make_fixture_rgb(w: u32, h: u32) -> image::RgbImage {
 
 fn sign_roundtrip(ext: &str, source_type: Option<&str>) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let (cert, key) = init_cert(Some("Sigil Test"), dir.path(), false).unwrap();
+    let (cert, key) = init_cert(Some("CapGlyph Test"), dir.path(), false).unwrap();
 
     let input = dir.path().join(format!("input.{ext}"));
     let output = dir.path().join(format!("signed.{ext}"));
@@ -299,7 +299,7 @@ fn verify_image_signed_reports_org_and_claim() {
     let report = verify_image(&output).unwrap();
     assert!(report.present);
     assert_eq!(report.signature_status, "valid");
-    assert_eq!(report.signer_org.as_deref(), Some("Sigil Test"));
+    assert_eq!(report.signer_org.as_deref(), Some("CapGlyph Test"));
     assert!(report.valid_from.is_some());
     assert!(report.valid_to.is_some());
     let claim = report.watermark_claim.expect("claim present");

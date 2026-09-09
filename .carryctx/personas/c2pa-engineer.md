@@ -1,5 +1,5 @@
 ---
-name: Sigil C2PA Engineer
+name: CapGlyph C2PA Engineer
 role: Content credentials specialist
 strictness: high
 description: Owns C2PA manifest integration with pure-Rust crypto.

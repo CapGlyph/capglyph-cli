@@ -2,7 +2,7 @@
 name = "capglyph-server"
 version = "0.1.7"
 edition = "2021"
-description = "CapGlyph credential server (sigild) — DB + atomic consume + revocation/audit"
+description = "CapGlyph credential server (capglyphd) — DB + atomic consume + revocation/audit"
 license = "Apache-2.0"
 repository = "https://github.com/CapGlyph/capglyph-cli"
 

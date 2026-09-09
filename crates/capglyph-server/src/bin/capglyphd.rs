@@ -1,4 +1,4 @@
-//! capglyphd — credential server binary (sigild)
+//! capglyphd — credential server binary
 //!
 //! MVP: SQLite-backed issuing / verify / consume / revoke over HTTP.
 //! Keep `image bytes never a cryptographic key` — keys derived via KMS.
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             "--help" | "-h" => {
-                println!("capglyphd — CapGlyph credential server (sigild) MVP");
+                println!("capglyphd — CapGlyph credential server MVP");
                 println!("Usage: capglyphd [--db PATH] [--listen ADDR]");
                 println!("  --db PATH      SQLite file (default: in-memory)");
                 println!("  --listen ADDR  HTTP listen addr (default: 127.0.0.1:3000)");

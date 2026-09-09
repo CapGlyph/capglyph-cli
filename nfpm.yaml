@@ -6,7 +6,7 @@ release: "1"
 section: "default"
 priority: "optional"
 maintainer: "capglyph developers"
-description: "CapGlyph - Invisible structural watermark for images (formerly Sigil)"
+description: "CapGlyph - Invisible structural watermark for images"
 license: "Apache-2.0"
 contents:
   - src: __CAPGLYPH_SOURCE__

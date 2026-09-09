@@ -2,13 +2,11 @@
 
 **Date:** 2026-08-31 (updated 2026-08-31 CTX-0022 → CTX-0040, renamed 2026-08-31 CTX-0039 Sigil → CapGlyph)
 **Task:** CTX-0019 → CTX-0022 → CTX-0040
-**Full spec:** [`capglyph-docs/research/media-credential/capglyph-core-api.md`](../../capglyph-docs/research/media-credential/capglyph-core-api.md)
+**Design record:** [categorized core extraction/API history](../../capglyph-docs/research/media-credential/architecture/capglyph-core-api.md).
 **Status:** CTX-0040 — standalone `CapGlyph/capglyph-core` repo (canonical Rust Core, v0.1.0) extracted from `capglyph-cli/crates/capglyph-core`; `capglyph-cli` now depends via `path = "../capglyph-core"` (isolated monorepo)
 **Issue:** [#13](https://github.com/CapGlyph/capglyph-cli/issues/13) (originally legacy Sigil repo #13, now CapGlyph/capglyph-cli, redirects)
 
-This file is the **capglyph-repo-local sketch** of the shared `capglyph-core` boundary (formerly `sigil-core`).
-The normative spec lives in `capglyph-docs` (formerly `sigil-docs`); this file exists so `cargo test` reviewers
-and CI can verify the migration plan without crossing repos.
+This is a historical extraction sketch, not a current Rust API or normative wire contract. Current carrier code is in [capglyph-core](../../capglyph-core/README.md); normative bytes are in [capglyph-spec](../../capglyph-spec/README.md). DCT/DWT have since moved into the core and CLI modules delegate/re-export. `Register`/`OrbRansacRegister`, `Adaptive`, and the generic wrapper below are historical proposals, not implemented public APIs.
 
 ## Workspace after CTX-0040 (v0.1.0, formerly v0.2.0 Sigil; reset 2026-08-31 CTX-0044)
 
@@ -45,11 +43,11 @@ capglyph-cli/
 - `keying.rs` — HMAC PRF, split into `K_embed` (placement) / `K_mac` (framing tag) / `K_object` (pointer AEAD)
 - `spread_spectrum.rs` — deprecated shim until `ecc` replaces repetition-8
 - `geometry.rs` — `GeometryFile` (serde), cover vault + carrier lattice
-- `carrier.rs` (`Carrier` trait + `Placement` + `AlphaCarrier`) — single dispatch point (CTX-0018), `DctCarrier`/`DwtCarrier` impls stay in `capglyph/src/carrier.rs` (legacy `sigil/src/carrier.rs`, facade) until `dct`/`dwt` move in follow-up
+- `carrier.rs` — canonical `Carrier` trait and Alpha/Dct/Dwt implementations now reside in core; CLI facades re-export/delegate.
 - `core.rs` grouping shim — replaced by `pub use capglyph_core::*` in `capglyph/src/lib.rs` + `capglyph/src/core.rs` re-exports (alias `sigil_core` retained)
 - **CTX-0020:** `framing` (CBOR `version/length/type/flags` + HMAC) + `ecc` (BCH/RS + interleave + soft-bits LLR) + `interleave` — all moved in CTX-0022
-- **CTX-0021:** `registration::Register` (`R = I_submitted^aligned - I_original` + correlation) + `CoverVault`/`HybridMatch` — moved in CTX-0022
-- `dct.rs` + `dwt.rs` + `dwt_embed.rs` → `capglyph_core::carrier::{dct,dwt}` (alias `sigil_core`) — **deferred** (still in `capglyph` binary, uses `capglyph_core::Placement` via `carrier::to_core_placement` bridge)
+- Registration helpers moved to core; current interfaces are `Registration`, `Identity` and `Translation`/NCC, not the historical `Register`/ORB sketch.
+- `dct.rs`, `dwt.rs`, `dwt_embed.rs` and concrete carriers were subsequently extracted into core; the former deferred-move status is superseded.
 
 ## What stays in capglyph (binary, formerly sigil)
 
