@@ -474,12 +474,12 @@ impl Db {
         token_hash: &[u8],
         idempotency_key: &str,
         actor_id: Option<Uuid>,
-        request_hash: Option<Vec<u8>>,
-    ) -> Result<Credential> {
+        request_hash: &[u8; 32],
+    ) -> Result<(Credential, bool)> {
         self.with_conn_mut(|conn| {
             // Use IMMEDIATE to acquire reserved lock early and avoid deadlock busy loops
             conn.execute_batch("BEGIN IMMEDIATE;")?;
-            let result: Result<Credential> = (|| {
+            let result: Result<(Credential, bool)> = (|| {
                 // 1. Find credential by token_hash
                 let cred_opt = {
                     let mut stmt = conn.prepare(
@@ -519,26 +519,26 @@ impl Db {
                 let cred = cred_opt.ok_or_else(|| ServerError::NotFound("credential not found".into()))?;
 
                 // 2. Check idempotency: has this key already been used for this credential?
-                let existing: Option<(String, String)> = {
+                let existing: Option<(Option<String>, Option<Vec<u8>>, String)> = {
                     let mut stmt = conn.prepare(
-                        "SELECT id, outcome FROM credential_consumptions WHERE credential_id = ?1 AND idempotency_key = ?2",
+                        "SELECT actor_id, request_hash, outcome FROM credential_consumptions WHERE credential_id = ?1 AND idempotency_key = ?2",
                     )?;
                     stmt.query_row(
                         params![cred.id.to_string(), idempotency_key],
-                        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                     )
                     .optional()?
                 };
-                if let Some((_id, _outcome)) = existing {
-                    // Idempotent replay — return current credential without mutating.
-                    // Outcome must have been success previously; we treat replay as success.
-                    // Verify credential still looks valid (but allow replay even if now expired? spec says idempotent).
-                    // For strictness, we return credential as-is.
-                    // Need to ensure we didn't already count this consumption; replay should not increment.
-                    // Just return the credential with current use_count.
-                    // The caller can distinguish replay via `outcome`.
-                    // We do not insert audit again.
-                    return Ok(cred);
+                if let Some((stored_actor, stored_hash, outcome)) = existing {
+                    let actor_matches = stored_actor.as_deref()
+                        == actor_id.as_ref().map(|actor| actor.to_string()).as_deref();
+                    let hash_matches = stored_hash.as_deref() == Some(request_hash.as_slice());
+                    if outcome != "consumed" || !actor_matches || !hash_matches {
+                        return Err(ServerError::Conflict(
+                            "idempotency key was already used for a different request".into(),
+                        ));
+                    }
+                    return Ok((cred, true));
                 }
 
                 // 3. Check credential state before consuming (fail-closed)
@@ -550,7 +550,7 @@ impl Db {
                         &cred.id,
                         idempotency_key,
                         actor_id,
-                        request_hash.as_deref(),
+                        Some(request_hash.as_slice()),
                         "revoked",
                     );
                     return Err(ServerError::Revoked);
@@ -563,7 +563,7 @@ impl Db {
                             &cred.id,
                             idempotency_key,
                             actor_id,
-                            request_hash.as_deref(),
+                            Some(request_hash.as_slice()),
                             "not_yet_valid",
                         );
                         return Err(ServerError::Expired);
@@ -576,7 +576,7 @@ impl Db {
                             &cred.id,
                             idempotency_key,
                             actor_id,
-                            request_hash.as_deref(),
+                            Some(request_hash.as_slice()),
                             "expired",
                         );
                         return Err(ServerError::Expired);
@@ -589,7 +589,7 @@ impl Db {
                             &cred.id,
                             idempotency_key,
                             actor_id,
-                            request_hash.as_deref(),
+                            Some(request_hash.as_slice()),
                             "exhausted",
                         );
                         return Err(ServerError::Exhausted);
@@ -623,7 +623,7 @@ impl Db {
                             &cred.id,
                             idempotency_key,
                             actor_id,
-                            request_hash.as_deref(),
+                            Some(request_hash.as_slice()),
                             "exhausted_race",
                         );
                         return Err(ServerError::Exhausted);
@@ -636,14 +636,14 @@ impl Db {
                     &cred.id,
                     idempotency_key,
                     actor_id,
-                    request_hash.as_deref(),
+                    Some(request_hash.as_slice()),
                     "consumed",
                 )?;
 
                 // 6. Return updated credential
                 let mut updated = cred;
                 updated.use_count = new_use_count;
-                Ok(updated)
+                Ok((updated, false))
             })();
 
             match &result {

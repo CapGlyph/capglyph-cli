@@ -1,4 +1,4 @@
-//! CLI dispatch for the `capglyph c2pa` command group (legacy `sigil c2pa`).
+//! CLI dispatch for the `capglyph c2pa` command group.
 
 use std::path::PathBuf;
 
@@ -10,7 +10,7 @@ use crate::cli::{C2paCommand, C2paSignArgs};
 
 const DEFAULT_CERT_DIR: &str = "./capglyph-certs/";
 
-/// Entry point for the `capglyph c2pa` subcommand group (legacy `sigil c2pa`).
+/// Entry point for the `capglyph c2pa` subcommand group.
 ///
 /// Returns the process exit code: 0 = valid, 1 = invalid, 2 = unsigned.
 pub fn run(cmd: &C2paCommand) -> Result<i32> {

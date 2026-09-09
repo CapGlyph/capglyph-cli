@@ -54,7 +54,7 @@ fn dct_framed_128b_roundtrip_bch() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     assert!(n > 0);
@@ -77,7 +77,7 @@ fn dct_framed_128b_roundtrip_repetition() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     assert!(n > 0);
@@ -100,7 +100,7 @@ fn dwt_framed_128b_roundtrip_bch() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     assert!(n > 0);
@@ -124,7 +124,7 @@ fn dct_framed_fer_jpeg_q75() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     // JPEG q75 roundtrip via image crate

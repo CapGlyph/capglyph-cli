@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use base64::Engine as _;
+use capglyph_core::error::{CapGlyphError, ErrorCode};
 
 use crate::error::ServerError;
 use crate::models::{
-    ConsumeResponse, IssueRequest, IssueResponse, MessageObject, ResolveMessageResponse,
-    RevokeRequest, StoreMessageResponse, VerifyResponse,
+    AuthorizationContext, ConsumeResponse, IssueRequest, IssueResponse, ResolveMessageResponse,
+    RevokeRequest, StoreMessageResponse, VerifyResponse, VersionResponse, API_VERSION,
 };
 use crate::service::Service;
 
@@ -31,20 +32,88 @@ pub struct AppState {
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
 fn map_err(e: ServerError) -> (StatusCode, Json<serde_json::Value>) {
-    let (code, msg) = match &e {
-        ServerError::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
-        ServerError::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
-        ServerError::Expired => (StatusCode::GONE, "expired".into()),
-        ServerError::Revoked => (StatusCode::GONE, "revoked".into()),
-        ServerError::Exhausted => (StatusCode::TOO_MANY_REQUESTS, "exhausted".into()),
-        ServerError::InvalidToken => (StatusCode::BAD_REQUEST, "invalid token".into()),
-        ServerError::Unauthorized(m) => (StatusCode::FORBIDDEN, m.clone()),
-        ServerError::Db(_) | ServerError::Internal(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
-        }
+    let status = match &e {
+        ServerError::NotFound(_) | ServerError::KeyNotFound(_) => StatusCode::NOT_FOUND,
+        ServerError::Conflict(_) | ServerError::Exhausted => StatusCode::CONFLICT,
+        ServerError::Expired | ServerError::Revoked => StatusCode::GONE,
+        ServerError::InvalidToken => StatusCode::UNPROCESSABLE_ENTITY,
+        ServerError::ScopeDenied | ServerError::Unauthorized(_) => StatusCode::FORBIDDEN,
+        ServerError::Core(error) => match error.code {
+            ErrorCode::VersionUnsupported | ErrorCode::MalformedFrame => StatusCode::BAD_REQUEST,
+            ErrorCode::KeyNotFound => StatusCode::NOT_FOUND,
+            ErrorCode::AuthFailed => StatusCode::UNAUTHORIZED,
+            ErrorCode::PayloadInvalid | ErrorCode::Tampered | ErrorCode::GeometryMismatch => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+            ErrorCode::InsufficientCapacity => StatusCode::PAYLOAD_TOO_LARGE,
+            ErrorCode::Expired | ErrorCode::Revoked => StatusCode::GONE,
+            ErrorCode::Consumed => StatusCode::CONFLICT,
+            ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        },
+        ServerError::Db(_) | ServerError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    let body = serde_json::json!({ "error": msg, "code": code.as_u16() });
-    (code, Json(body))
+    let mut body = serde_json::json!({
+        "error": e.error_name(),
+        "code": e.code(),
+        "message": e.public_message(),
+    });
+    if e.code() == ErrorCode::VersionUnsupported.as_str() {
+        body["supported_versions"] = serde_json::json!([API_VERSION]);
+    }
+    (status, Json(body))
+}
+
+fn negotiate_version(headers: &HeaderMap) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let Some(raw) = headers.get("accept-capglyph-version") else {
+        return Ok(());
+    };
+    let accepted = raw
+        .to_str()
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .filter_map(|item| item.trim().parse::<u8>().ok())
+                .any(|version| version == API_VERSION)
+        })
+        .unwrap_or(false);
+    if accepted {
+        Ok(())
+    } else {
+        Err(map_err(ServerError::Core(CapGlyphError::new(
+            ErrorCode::VersionUnsupported,
+            "no mutually supported CapGlyph version",
+        ))))
+    }
+}
+
+/// Extract identity asserted by trusted ingress. A standalone deployment must
+/// put authentication middleware in front of this header; request bodies are
+/// never allowed to self-assert a different actor.
+fn authorization_context(
+    headers: &HeaderMap,
+    claimed_actor: Option<Uuid>,
+    requested_scope: Option<String>,
+) -> Result<AuthorizationContext, (StatusCode, Json<serde_json::Value>)> {
+    let header_actor = headers
+        .get("x-capglyph-actor-id")
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or_else(|| map_err(ServerError::Unauthorized("invalid actor context".into())))
+        })
+        .transpose()?;
+    if claimed_actor.is_some() && claimed_actor != header_actor {
+        return Err(map_err(ServerError::Unauthorized(
+            "body actor does not match trusted ingress actor".into(),
+        )));
+    }
+    Ok(AuthorizationContext {
+        actor_id: header_actor,
+        requested_scope,
+    })
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -52,13 +121,21 @@ fn map_err(e: ServerError) -> (StatusCode, Json<serde_json::Value>) {
 #[derive(Debug, Deserialize)]
 pub struct VerifyBody {
     pub token_id: String,
+    pub requested_scope: Option<String>,
 }
 
 async fn handle_verify(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<VerifyBody>,
 ) -> Result<Json<VerifyResponse>, (StatusCode, Json<serde_json::Value>)> {
-    state.svc.verify(&body.token_id).map(Json).map_err(map_err)
+    negotiate_version(&headers)?;
+    let auth = authorization_context(&headers, None, body.requested_scope)?;
+    state
+        .svc
+        .verify_authorized(&body.token_id, &auth)
+        .map(Json)
+        .map_err(map_err)
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +143,7 @@ pub struct ConsumeBody {
     pub token_id: String,
     pub idempotency_key: Option<String>,
     pub actor_id: Option<Uuid>,
+    pub requested_scope: Option<String>,
 }
 
 async fn handle_consume(
@@ -73,6 +151,7 @@ async fn handle_consume(
     headers: HeaderMap,
     Json(body): Json<ConsumeBody>,
 ) -> Result<Json<ConsumeResponse>, (StatusCode, Json<serde_json::Value>)> {
+    negotiate_version(&headers)?;
     // Idempotency-Key can be in header or body; header takes precedence
     let idem = headers
         .get("idempotency-key")
@@ -85,9 +164,10 @@ async fn handle_consume(
             ))
         })?;
 
+    let auth = authorization_context(&headers, body.actor_id, body.requested_scope)?;
     state
         .svc
-        .consume(&body.token_id, &idem, body.actor_id)
+        .consume_authorized(&body.token_id, &idem, &auth)
         .map(Json)
         .map_err(map_err)
 }
@@ -95,8 +175,18 @@ async fn handle_consume(
 async fn handle_get(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<crate::models::Credential>, (StatusCode, Json<serde_json::Value>)> {
-    state.svc.get(&id).map(Json).map_err(map_err)
+    negotiate_version(&headers)?;
+    let auth = authorization_context(&headers, None, None)?;
+    let token = headers
+        .get("x-capglyph-token")
+        .and_then(|value| value.to_str().ok());
+    state
+        .svc
+        .get_authorized(&id, &auth, token)
+        .map(Json)
+        .map_err(map_err)
 }
 
 async fn handle_revoke(
@@ -105,14 +195,17 @@ async fn handle_revoke(
     headers: HeaderMap,
     body: Option<Json<RevokeRequest>>,
 ) -> Result<Json<crate::models::Credential>, (StatusCode, Json<serde_json::Value>)> {
-    // Actor can be in body or header; optional
-    let actor_id = body.and_then(|b| b.actor_id).or_else(|| {
-        headers
-            .get("x-actor-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
+    negotiate_version(&headers)?;
+    let body = body.map(|body| body.0).unwrap_or(RevokeRequest {
+        actor_id: None,
+        token_id: None,
     });
-    state.svc.revoke(&id, actor_id).map(Json).map_err(map_err)
+    let auth = authorization_context(&headers, body.actor_id, None)?;
+    state
+        .svc
+        .revoke_authorized(&id, &auth, body.token_id.as_deref())
+        .map(Json)
+        .map_err(map_err)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -130,8 +223,11 @@ pub struct IssueBody {
 
 async fn handle_issue(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<IssueBody>,
 ) -> Result<Json<IssueResponse>, (StatusCode, Json<serde_json::Value>)> {
+    negotiate_version(&headers)?;
+    let _auth = authorization_context(&headers, None, None)?;
     let req = IssueRequest {
         cover_id: body.cover_id,
         scope: body.scope,
@@ -161,8 +257,12 @@ pub struct StoreMessageBody {
 
 async fn handle_store_message(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<StoreMessageBody>,
 ) -> Result<Json<StoreMessageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    negotiate_version(&headers)?;
+    let auth = authorization_context(&headers, body.owner_id, None)?;
+    let owner_id = auth.actor_id;
     // Two modes: if plaintext_base64 provided, encrypt server-side; else raw ciphertext
     if let Some(pt_b64) = body.plaintext_base64 {
         let pt = base64::engine::general_purpose::STANDARD
@@ -176,7 +276,7 @@ async fn handle_store_message(
         // encrypt_and_store generates key/nonce internally
         state
             .svc
-            .encrypt_and_store(&pt, policy, body.owner_id, body.expires_at)
+            .encrypt_and_store(&pt, policy, owner_id, body.expires_at)
             .map(|(resp, _, _)| Json(resp))
             .map_err(map_err)
     } else {
@@ -207,7 +307,7 @@ async fn handle_store_message(
                 tag,
                 None,
                 policy,
-                body.owner_id,
+                owner_id,
                 body.expires_at,
             )
             .map(Json)
@@ -223,20 +323,25 @@ pub struct ResolveMessageBody {
 
 async fn handle_resolve_message(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<ResolveMessageBody>,
 ) -> Result<Json<ResolveMessageResponse>, (StatusCode, Json<serde_json::Value>)> {
+    negotiate_version(&headers)?;
+    let auth = authorization_context(&headers, body.actor_id, None)?;
     state
         .svc
-        .resolve_message(&body.capability_id, body.actor_id)
+        .resolve_message(&body.capability_id, auth.actor_id)
         .map(Json)
         .map_err(map_err)
 }
 
-async fn handle_get_message(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<MessageObject>, (StatusCode, Json<serde_json::Value>)> {
-    state.svc.get_message_object(&id).map(Json).map_err(map_err)
+async fn handle_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        api_version: API_VERSION,
+        wire_version: 1,
+        spec_version: "1.0.1".into(),
+        supported_versions: vec![API_VERSION],
+    })
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -244,6 +349,7 @@ async fn handle_get_message(
 pub fn router(svc: Service) -> Router {
     let state = AppState { svc: Arc::new(svc) };
     Router::new()
+        .route("/v1/version", get(handle_version))
         .route("/v1/credentials", post(handle_issue))
         .route("/v1/credentials/verify", post(handle_verify))
         .route("/v1/credentials/consume", post(handle_consume))
@@ -251,7 +357,6 @@ pub fn router(svc: Service) -> Router {
         .route("/v1/credentials/:id/revoke", post(handle_revoke))
         .route("/v1/messages", post(handle_store_message))
         .route("/v1/messages/resolve", post(handle_resolve_message))
-        .route("/v1/messages/:id", get(handle_get_message))
         .with_state(state)
 }
 
@@ -341,7 +446,10 @@ mod tests {
         let issue: IssueResponse = serde_json::from_slice(&body).unwrap();
 
         // Verify
-        let verify_body = serde_json::json!({ "token_id": issue.token_id });
+        let verify_body = serde_json::json!({
+            "token_id": issue.token_id,
+            "requested_scope": "download:asset:42"
+        });
         let req = Request::builder()
             .uri("/v1/credentials/verify")
             .method("POST")
@@ -354,7 +462,8 @@ mod tests {
         // Consume #1
         let consume_body = serde_json::json!({
             "token_id": issue.token_id,
-            "idempotency_key": "idem-1"
+            "idempotency_key": "idem-1",
+            "requested_scope": "download:asset:42"
         });
         let req = Request::builder()
             .uri("/v1/credentials/consume")
@@ -374,7 +483,8 @@ mod tests {
         // Consume #2 (different idempotency)
         let consume_body2 = serde_json::json!({
             "token_id": issue.token_id,
-            "idempotency_key": "idem-2"
+            "idempotency_key": "idem-2",
+            "requested_scope": "download:asset:42"
         });
         let req = Request::builder()
             .uri("/v1/credentials/consume")
@@ -388,7 +498,8 @@ mod tests {
         // Consume #3 should exhaust (max_uses=2)
         let consume_body3 = serde_json::json!({
             "token_id": issue.token_id,
-            "idempotency_key": "idem-3"
+            "idempotency_key": "idem-3",
+            "requested_scope": "download:asset:42"
         });
         let req = Request::builder()
             .uri("/v1/credentials/consume")
@@ -397,12 +508,13 @@ mod tests {
             .body(Body::from(consume_body3.to_string()))
             .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
 
         // Get credential
         let req = Request::builder()
             .uri(format!("/v1/credentials/{}", issue.credential_id))
             .method("GET")
+            .header("x-capglyph-token", &issue.token_id)
             .body(Body::empty())
             .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
@@ -413,7 +525,9 @@ mod tests {
             .uri(format!("/v1/credentials/{}/revoke", issue.credential_id))
             .method("POST")
             .header("content-type", "application/json")
-            .body(Body::from("{}"))
+            .body(Body::from(
+                serde_json::json!({ "token_id": issue.token_id }).to_string(),
+            ))
             .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
         // First revoke should succeed 200

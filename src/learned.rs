@@ -2,12 +2,12 @@
 //!
 //! TrustMark (Adobe, MIT) embeds a ~40-75 bit payload via a trained CNN
 //! encoder/decoder pair. It survives aggressive ordinary edits (JPEG q30,
-//! blur σ2, scale 0.5×) that defeat CapGlyph's classical DCT/DWT layers (legacy Sigil), but
+//! blur σ2, scale 0.5×) that defeat CapGlyph's classical DCT/DWT layers, but
 //! shares the same limit on generative regeneration (img2img) — see
 //! findings/2026-08-15-q114-trustmark-vs-attacks.md.
 //!
 //! Model files are ONNX weights downloaded once from Adobe's CDN into the
-//! XDG data directory (see `model_dir`). `capglyph fetch-models` pre-downloads (legacy `sigil fetch-models`).
+//! XDG data directory (see `model_dir`). `capglyph fetch-models` pre-downloads them.
 
 use std::path::{Path, PathBuf};
 
@@ -86,7 +86,7 @@ pub fn fetch_models(dir: &Path) -> Result<()> {
 /// Build a ureq agent honoring HTTPS_PROXY/HTTP_PROXY/ALL_PROXY.
 ///
 /// ureq does not read proxy environment variables by default; explicit
-/// wiring keeps `capglyph fetch-models` working in proxied environments (legacy `sigil fetch-models`).
+/// wiring keeps `capglyph fetch-models` working in proxied environments.
 fn http_agent() -> Result<ureq::Agent> {
     let mut builder = ureq::Agent::config_builder();
     let proxy = std::env::var("HTTPS_PROXY")
@@ -109,7 +109,7 @@ pub fn load(dir: &Path) -> Result<Trustmark> {
     for name in MODEL_FILES {
         if !dir.join(name).exists() {
             return Err(anyhow!(
-                "model file {name} missing in {:?} — run `capglyph fetch-models` first (legacy `sigil fetch-models`)",
+                "model file {name} missing in {:?} — run `capglyph fetch-models` first",
                 dir
             ));
         }

@@ -29,7 +29,7 @@ Use this workflow for repository changes after a GitHub Issue identifies the out
 
 1. Adopt the assigned persona and applicable delivery, documentation, security, and performance rules (see `.carryctx/rules/`).
 2. Implement only the accepted contract in scope. Add focused tests first where practical, then cover errors, bounds, denial, cleanup, and recovery.
-3. Update affected canonical `sigil-docs` material for architecture, security, public behavior, configuration, compatibility, and developer workflows **in the same PR**. Documentation synchronization is part of Definition of Done — stale docs block `APPROVE`. Prefer linking to one authoritative definition instead of copying contracts into comments/tests.
+3. Update affected canonical `capglyph-docs` material for architecture, security, public behavior, configuration, compatibility, and developer workflows **in the same PR**. Documentation synchronization is part of Definition of Done — stale docs block `APPROVE`. Prefer linking to one authoritative definition instead of copying contracts into comments/tests.
 4. Run focused checks and the repository integration gate. Minimum local gates before PR: `cargo fmt -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, plus `yamllint -d relaxed .` where YAML exists and `carryctx doctor`. Where WASM is touched, also `cargo check --target wasm32-unknown-unknown` and `cargo tree --target wasm32-unknown-unknown`. Record exact commands, environment, results, and residual gaps in CarryCtx progress.
 5. Checkpoint a coherent milestone before handoff or task switching (`carryctx checkpoint create`).
 
@@ -38,13 +38,13 @@ Use this workflow for repository changes after a GitHub Issue identifies the out
 1. Review the diff for scope, generated artifacts, secrets, accidental API expansion, and stale documentation. Ensure `findings/review-log.md` will be updated post-review if findings exist.
 2. Create coherent commits linked to the Issue and CarryCtx task when commit authority exists. Commit messages reference `CTX-XXXX` and use `type(scope): subject` (e.g. `chore(review): establish continuous review hygiene (CTX-0029)`).
 3. Open a pull request that states outcome, contracts, security/performance impact, docs synchronization, verification, dependencies, and merge order. PR description links the GitHub Issue (`Closes #NNN`) and CarryCtx task, and states the branch name (`ctx-XXXX/<type>-<slug>`). Include validation evidence and the exact docs revision.
-4. Link affected cross-repository pull requests and the exact `sigil-docs` revision where applicable. CI must be green before review can `APPROVE`.
+4. Link affected cross-repository pull requests and the exact `capglyph-docs` revision where applicable. CI must be green before review can `APPROVE`.
 
 ## 6. Independent review and CI
 
 1. Move the task to review; the implementer does not self-accept. Reviewer must be a **different agent** than the implementer.
 2. The reviewer reads the authoritative contracts, inspects the diff, reruns relevant checks (fmt/clippy/test/wasm), and records findings or explicit `APPROVE` / `REQUEST_CHANGES` in the PR and in CarryCtx progress/risk. Required geometry, signal, wasm, c2pa, performance, test, and docs owners review changes crossing their boundaries.
-3. Defects, observations, and risks are recorded durably in CarryCtx progress/risk **and** appended to `findings/review-log.md` (and `sigil-docs/findings/review-log.md` when docs are affected). Each entry notes date, task, reviewer, scope, verdict, and disposition. Blocking findings are converted to follow-up `CTX-XXXX` tasks with team/priority/dependencies before merge; non-blocking observations may be tracked as `informational` follow-ups.
+3. Defects, observations, and risks are recorded durably in CarryCtx progress/risk **and** appended to `findings/review-log.md` (and `capglyph-docs/findings/review-log.md` when docs are affected). Each entry notes date, task, reviewer, scope, verdict, and disposition. Blocking findings are converted to follow-up `CTX-XXXX` tasks with team/priority/dependencies before merge; non-blocking observations may be tracked as `informational` follow-ups.
 4. Resolve every blocking finding and CI failure before merge. Re-request review after fixes; the same independence rule applies to re-review.
 
 ## 7. Merge and close

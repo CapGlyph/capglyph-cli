@@ -62,7 +62,7 @@ fn dct_residual_128b_roundtrip_bch() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
 
@@ -90,7 +90,7 @@ fn dwt_residual_128b_roundtrip_bch() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     let reg = IdentityRegistration;
@@ -116,7 +116,7 @@ fn dct_residual_with_translation_warp() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
 
@@ -194,7 +194,7 @@ fn dct_hybrid_finds_correct_cover_among_n() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
 
@@ -232,7 +232,7 @@ fn dwt_hybrid_finds_correct_cover_among_n() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     let reg = IdentityRegistration;
@@ -276,7 +276,7 @@ fn dct_hybrid_translated_still_finds_cover() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     // Shift submitted by (8, 4) — left/up shift via edge replication
@@ -316,14 +316,14 @@ fn residual_llr_stronger_than_blind() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
 
     // Blind soft bits
     let params = capglyph::framing::Params {
         version: 1,
-        payload_type: PayloadType::Credential,
+        payload_type: PayloadType::Message,
         flags: 0,
     };
     let sealed_len = capglyph::framing::sealed_len(16, &params);
@@ -389,7 +389,7 @@ fn extract_with_hint_and_cover_dispatches_correctly() {
         &keys,
         &Default::default(),
         profile,
-        PayloadType::Credential,
+        PayloadType::Message,
     )
     .unwrap();
     let reg = IdentityRegistration;

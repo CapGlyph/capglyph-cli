@@ -1,4 +1,4 @@
-# sigild (capglyphd) MVP — DB + Atomic Consume + Revocation/Audit (CTX-0023)
+# capglyphd MVP — DB + Atomic Consume + Revocation/Audit (CTX-0023)
 
 **Status:** Implemented 2026-08-31
 **Crate:** `crates/capglyph-server` (binary `capglyphd`)

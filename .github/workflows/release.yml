@@ -24,12 +24,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: capglyph-linux-x86_64
-            arch: amd64
+            arch: x86_64
             os_name: linux
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: capglyph-linux-aarch64
-            arch: arm64
+            arch: aarch64
             os_name: linux
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -101,19 +101,23 @@ jobs:
       - name: Package for Linux distributions (nfpm)
         if: matrix.os_name == 'linux'
         run: |
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            NFPM_ARCH="arm64"
-            PKG_ARCH="aarch64"
+          set -euo pipefail
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            nfpm_download_arch=arm64
           else
-            NFPM_ARCH="x86_64"
-            PKG_ARCH="x86_64"
+            nfpm_download_arch=x86_64
           fi
-          curl -sL https://github.com/goreleaser/nfpm/releases/download/v2.37.1/nfpm_2.37.1_Linux_${NFPM_ARCH}.tar.gz | tar xz nfpm
-          sed -i "s/amd64/${NFPM_ARCH}/g" nfpm.yaml
-          sed -i "s/capglyph-linux-x86_64/${{ matrix.artifact_name }}/g" nfpm.yaml
-          ./nfpm pkg --packager deb --target capglyph-linux-${PKG_ARCH}.deb
-          ./nfpm pkg --packager rpm --target capglyph-linux-${PKG_ARCH}.rpm
-          ./nfpm pkg --packager archlinux --target capglyph-linux-${PKG_ARCH}.pkg.tar.zst
+          audit_dir="../recording/package-audit/native-${{ matrix.arch }}"
+          mkdir -p "$audit_dir/tooling"
+          nfpm_releases=https://github.com/goreleaser/nfpm/releases
+          curl --fail --silent --show-error --location \
+            "$nfpm_releases/download/v2.37.1/nfpm_2.37.1_Linux_${nfpm_download_arch}.tar.gz" \
+            | tar -xz -C "$audit_dir/tooling" nfpm
+          NFPM="$audit_dir/tooling/nfpm" ./scripts/package-linux.sh \
+            "$GITHUB_REF_NAME" \
+            "${{ matrix.arch }}" \
+            "${{ matrix.artifact_name }}" \
+            "$audit_dir/packages"
 
       - name: Upload artifact
         # v5 runs on the Node24 runtime; v4.x still declares node20 and
@@ -124,9 +128,9 @@ jobs:
           path: |
             capglyph-cli/${{ matrix.artifact_name }}.tar.gz
             capglyph-cli/${{ matrix.artifact_name }}.zip
-            capglyph-cli/*.deb
-            capglyph-cli/*.rpm
-            capglyph-cli/*.pkg.tar.zst
+            recording/package-audit/native-${{ matrix.arch }}/packages/*.deb
+            recording/package-audit/native-${{ matrix.arch }}/packages/*.rpm
+            recording/package-audit/native-${{ matrix.arch }}/packages/*.pkg.tar.zst
 
   release-github:
     name: Create GitHub Release

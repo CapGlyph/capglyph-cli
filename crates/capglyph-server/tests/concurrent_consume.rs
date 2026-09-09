@@ -48,7 +48,7 @@ fn setup_service_with_credential(max_uses: Option<i64>) -> (Service, String, Uui
         .create_credential(NewCredential {
             cover_id: cover.id,
             subject_id: None,
-            scope: json!(["download:asset:42"]),
+            scope: json!([]),
             mode: "dct".into(),
             schema_version: 1,
             key_id: "default".into(),

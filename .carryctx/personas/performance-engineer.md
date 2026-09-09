@@ -1,5 +1,5 @@
 ---
-name: Sigil Performance Engineer
+name: CapGlyph Performance Engineer
 role: Throughput and fidelity budget specialist
 strictness: high
 description: Turns watermark robustness vs fidelity into measurable budgets.

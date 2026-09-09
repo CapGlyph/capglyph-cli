@@ -1,5 +1,5 @@
 ---
-name: Sigil Signal Engineer
+name: CapGlyph Signal Engineer
 role: Signal, keying and spread-spectrum specialist
 strictness: high
 description: Owns keying, spread_spectrum, geometry and batch placement.

@@ -1,5 +1,5 @@
 ---
-name: Sigil WASM Engineer
+name: CapGlyph WASM Engineer
 role: Browser bridge and in-memory API specialist
 strictness: high
 description: Owns wasm_api.rs, wasm32 feature isolation, and in-memory embed/verify.

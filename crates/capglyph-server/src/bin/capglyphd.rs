@@ -1,4 +1,4 @@
-//! capglyphd — credential server binary (sigild)
+//! capglyphd — credential server binary
 //!
 //! MVP: SQLite-backed issuing / verify / consume / revoke over HTTP.
 //! Keep `image bytes never a cryptographic key` — keys derived via KMS.
@@ -19,7 +19,7 @@ fn main() {
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Minimal CLI: `capglyphd --db /tmp/capglyphd.db --listen 127.0.0.1:3000`
+    // Minimal CLI: `capglyphd --db ./capglyphd.db --listen 127.0.0.1:3000`
     let args: Vec<String> = std::env::args().collect();
     let mut db_path: Option<PathBuf> = None;
     let mut listen: String = "127.0.0.1:3000".to_string();
@@ -39,11 +39,11 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             "--help" | "-h" => {
-                println!("capglyphd — CapGlyph credential server (sigild) MVP");
+                println!("capglyphd — CapGlyph credential server MVP");
                 println!("Usage: capglyphd [--db PATH] [--listen ADDR]");
                 println!("  --db PATH      SQLite file (default: in-memory)");
                 println!("  --listen ADDR  HTTP listen addr (default: 127.0.0.1:3000)");
-                println!("Env: CAPGLYPHD_MASTER_KEY (hex 32 bytes) or random if unset");
+                println!("Env: CAPGLYPHD_MASTER_KEY (exactly 32 non-zero bytes as hex)");
                 return Ok(());
             }
             _ => {}
@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt::init();
 
+    let persistent_db = db_path.is_some();
     let db = if let Some(p) = db_path {
         eprintln!("capglyphd: opening db at {:?}", p);
         Db::new(p)?
@@ -61,22 +62,29 @@ async fn main() -> anyhow::Result<()> {
         Db::new_in_memory()?
     };
 
-    // KMS: load master from env or generate
+    // KMS: persistent deployments must provide a stable, valid master key.
     let mut kms = Kms::new();
     if let Ok(hex_key) = std::env::var("CAPGLYPHD_MASTER_KEY") {
-        let bytes = hex::decode(hex_key.trim()).unwrap_or_else(|_| vec![0u8; 32]);
-        if bytes.len() == 32 {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            kms = kms.with_key("default", arr);
-            kms = kms.with_key("cred-2026-08", arr);
-            eprintln!("capglyphd: loaded master from CAPGLYPHD_MASTER_KEY");
+        let bytes = hex::decode(hex_key.trim())
+            .map_err(|_| anyhow::anyhow!("CAPGLYPHD_MASTER_KEY must be valid hexadecimal"))?;
+        if bytes.len() != 32 {
+            anyhow::bail!("CAPGLYPHD_MASTER_KEY must decode to exactly 32 bytes");
         }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        if arr == [0u8; 32] {
+            anyhow::bail!("CAPGLYPHD_MASTER_KEY must not be the all-zero key");
+        }
+        kms = kms.with_key("default", arr);
+        kms = kms.with_key("cred-2026-08", arr);
+        eprintln!("capglyphd: loaded master from CAPGLYPHD_MASTER_KEY");
+    } else if persistent_db {
+        anyhow::bail!("CAPGLYPHD_MASTER_KEY is required with --db");
     } else {
         kms.generate_key_id("default");
         kms.generate_key_id("cred-2026-08");
         eprintln!(
-            "capglyphd: generated ephemeral master keys (set CAPGLYPHD_MASTER_KEY for persistence)"
+            "capglyphd: generated ephemeral master keys for the in-memory development database"
         );
     }
 
@@ -88,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
     let app = capglyph_server::router(svc);
     let addr: SocketAddr = listen.parse()?;
     eprintln!("capglyphd: listening on http://{}", addr);
+    eprintln!("  GET  /v1/version               — API and wire versions");
     eprintln!("  POST /v1/credentials           — issue");
     eprintln!("  POST /v1/credentials/verify    — verify (read-only)");
     eprintln!("  POST /v1/credentials/consume   — consume (atomic, Idempotency-Key)");

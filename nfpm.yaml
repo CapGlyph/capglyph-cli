@@ -1,14 +1,19 @@
 name: "capglyph"
-arch: "amd64"
+arch: __CAPGLYPH_ARCH__
 platform: "linux"
-version: 0.1.0
+version: __CAPGLYPH_VERSION__
+release: "1"
 section: "default"
 priority: "optional"
 maintainer: "capglyph developers"
-description: "CapGlyph - Invisible structural watermark for images (formerly Sigil)"
+description: "CapGlyph - Invisible structural watermark for images"
 license: "Apache-2.0"
 contents:
-  - src: ./capglyph-linux-x86_64
+  - src: __CAPGLYPH_SOURCE__
     dst: /usr/bin/capglyph
-  - src: ./capglyph-linux-x86_64
+    file_info:
+      mode: 0755
+  - src: __CAPGLYPH_SOURCE__
     dst: /usr/bin/sigil
+    file_info:
+      mode: 0755

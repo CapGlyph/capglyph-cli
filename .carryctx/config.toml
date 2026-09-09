@@ -2,12 +2,19 @@ schema_version = 1
 
 [project]
 id = "01M0094ARQJD79NQ9M0P1YSWPZ"
-name = "sigil"
-task_prefix = "CTX"
+name = "capglyph-cli"
+task_prefix = "CGCLI"
 
 [git]
 main_branch = "main"
-branch_template = "ctx-{task_id}/{slug}"
+branch_template = "carryctx/{task_id}-{slug}"
+
+[worktree.cleanup]
+on_task_completed = "when_idle"
+on_task_cancelled = "keep"
+require_clean = true
+require_no_active_session = true
+delete_branch = "never"
 
 [session]
 stale_after = "2h"
@@ -16,6 +23,7 @@ single_active_session_per_agent = true
 [task]
 single_active_task_per_agent = true
 strict_completion = false
+list_limit = 200
 
 [context]
 default_mode = "compact"

@@ -1,16 +1,17 @@
 use base64::Engine as _;
 use chrono::Utc;
-use hmac::KeyInit;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+use capglyph_core::keying::KeyMaterial;
 
 use crate::db::Db;
 use crate::error::{Result, ServerError};
 use crate::models::{
     capability_id_to_base64url, parse_capability_id, parse_token_id, sha256, token_id_to_base64url,
-    Credential, IssueRequest, IssueResponse, MessageObject, NewCover, NewCredential,
-    NewMessageObject, ResolveMessageResponse, StoreMessageResponse,
+    AuthorizationContext, Credential, IssueRequest, IssueResponse, MessageObject, NewCover,
+    NewCredential, NewMessageObject, ResolveMessageResponse, StoreMessageResponse,
 };
 
 /// High-level service that wraps Db + KMS derivation + carrier framing.
@@ -47,33 +48,14 @@ impl Kms {
         self.master_by_key_id
             .get(key_id)
             .copied()
-            .ok_or_else(|| ServerError::NotFound(format!("key_id not found: {}", key_id)))
+            .filter(|key| *key != [0u8; 32])
+            .ok_or_else(|| ServerError::KeyNotFound(key_id.to_string()))
     }
 
-    /// Derive K_mac and K_embed from master via HMAC-SHA256 domain separation.
-    /// Matches `sigil-core-api.md` §4.4 `KeyMaterial` but simplified.
-    pub fn derive(
-        &self,
-        key_id: &str,
-        cover_id: &Uuid,
-        token_id: &[u8; 16],
-    ) -> Result<([u8; 32], [u8; 32])> {
+    /// Derive the three v1 role keys with RFC 5869 HKDF-SHA256.
+    pub fn derive(&self, key_id: &str, cover_id: &Uuid) -> Result<KeyMaterial> {
         let master = self.get_master(key_id)?;
-        let k_mac = Self::prf(&master, b"capglyph-k-mac-v1", cover_id, token_id);
-        let k_embed = Self::prf(&master, b"capglyph-k-embed-v1", cover_id, token_id);
-        Ok((k_mac, k_embed))
-    }
-
-    fn prf(master: &[u8; 32], domain: &[u8], cover_id: &Uuid, token_id: &[u8; 16]) -> [u8; 32] {
-        use hmac::{Hmac, Mac};
-        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(master).unwrap();
-        mac.update(domain);
-        mac.update(cover_id.as_bytes());
-        mac.update(token_id);
-        let out = mac.finalize().into_bytes();
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&out);
-        arr
+        KeyMaterial::from_ikm_v1(&master, cover_id.as_bytes()).map_err(ServerError::from)
     }
 }
 
@@ -130,38 +112,38 @@ impl Service {
             .ok_or_else(|| ServerError::NotFound(format!("cover not found: {}", cover_id)))?;
 
         let key_id = req.key_id.clone().unwrap_or_else(|| "default".to_string());
-        // Ensure KMS has this key, or generate
-        if self.kms.get_master(&key_id).is_err() {
-            // Auto-generate for MVP demo; real server would error
-            // We can't mutate self.kms here (clone), so we just derive with a zero key?
-            // Instead, treat missing key as 32 zero bytes for derivation (deterministic).
+        // Resolve trusted key context before generating or persisting any token.
+        // Unknown keys are a hard failure; there is no process-default or zero-key path.
+        let keys = self.kms.derive(&key_id, &cover.id)?;
+
+        Self::validate_scope_shape(&req.scope)?;
+        if matches!(req.max_uses, Some(max) if max <= 0) {
+            return Err(ServerError::Conflict(
+                "max_uses must be greater than zero".into(),
+            ));
+        }
+        if let (Some(not_before), Some(expires_at)) = (req.not_before, req.expires_at) {
+            if not_before >= expires_at {
+                return Err(ServerError::Conflict(
+                    "not_before must precede expires_at".into(),
+                ));
+            }
         }
 
         // Generate token_id (CSPRNG 128-bit)
         let mut token_id = [0u8; 16];
         rand::thread_rng().fill_bytes(&mut token_id);
 
-        // Derive K_mac/K_embed (if key_id missing, use zero master)
-        let (k_mac, _k_embed) = match self.kms.derive(&key_id, &cover.id, &token_id) {
-            Ok(v) => v,
-            Err(_) => {
-                let zero = [0u8; 32];
-                let k_mac = Kms::prf(&zero, b"capglyph-k-mac-v1", &cover.id, &token_id);
-                let k_embed = Kms::prf(&zero, b"capglyph-k-embed-v1", &cover.id, &token_id);
-                (k_mac, k_embed)
-            }
-        };
-
-        // Carrier framing: seal token_id via capglyph_core::framing
-        // This demonstrates carrier integration without needing an image.
+        // Carrier framing: seal the exact v1 Credential payload `{0: bstr16}`.
         let sealed = {
-            use capglyph_core::framing::{seal, Params, PayloadType};
+            use capglyph_core::framing::{credential_payload, try_seal_typed, Params, PayloadType};
             let params = Params {
                 version: 1,
                 payload_type: PayloadType::Credential,
                 flags: 0,
             };
-            seal(&token_id, &params, &k_mac)
+            let payload = credential_payload(&token_id);
+            try_seal_typed(&payload, &params, keys.k_mac())?
         };
 
         // ECC encode (demonstrates interleave + soft-bits stack)
@@ -212,6 +194,19 @@ impl Service {
     // ── Verify (read-only) ────────────────────────────────────────────────────
 
     pub fn verify(&self, token_id_str: &str) -> Result<crate::models::VerifyResponse> {
+        self.verify_authorized(token_id_str, &AuthorizationContext::default())
+    }
+
+    /// Verify identity evidence, then enforce subject and scope authorization.
+    ///
+    /// The token locates and authenticates a credential record. Authorization is
+    /// a distinct policy decision and requires trusted caller context whenever a
+    /// credential is subject-bound or carries non-empty scopes.
+    pub fn verify_authorized(
+        &self,
+        token_id_str: &str,
+        auth: &AuthorizationContext,
+    ) -> Result<crate::models::VerifyResponse> {
         let token_id = parse_token_id(token_id_str).map_err(|_e| ServerError::InvalidToken)?;
         let token_hash = sha256(&token_id);
         let cred = self
@@ -219,25 +214,22 @@ impl Service {
             .get_credential_by_token_hash(&token_hash)?
             .ok_or_else(|| ServerError::NotFound("credential not found".into()))?;
 
-        // Check state without mutating
+        // Resolve KMS context and exercise the canonical authenticated envelope
+        // before any application policy or authorization decision.
+        self.verify_framing(&cred, &token_id)?;
+
+        // Check state without mutating.
         let status = Self::credential_status(&cred);
         if status != "valid" {
-            // Map status to error but still return response for HTTP 200 with status field?
-            // For service layer we return error to let HTTP map to 400/403.
             match status.as_str() {
                 "revoked" => return Err(ServerError::Revoked),
-                "expired" => return Err(ServerError::Expired),
+                "expired" | "not_yet_valid" => return Err(ServerError::Expired),
                 "exhausted" => return Err(ServerError::Exhausted),
                 _ => {}
             }
         }
 
-        // Optionally verify framing MAC (demonstrates carrier integration)
-        // We derive K_mac and try to open the sealed frame that would have been
-        // embedded. Since we don't have the image, we reconstruct the sealed
-        // payload from token_id and verify it matches expected framing.
-        // This is a no-op for DB-only verify, but shows the code path.
-        let _ = self.verify_framing(&cred, &token_id);
+        Self::authorize_credential(&cred, auth)?;
 
         Ok(crate::models::VerifyResponse {
             credential_id: cred.id,
@@ -273,25 +265,89 @@ impl Service {
     }
 
     fn verify_framing(&self, cred: &Credential, token_id: &[u8; 16]) -> Result<()> {
-        // Re-derive K_mac and verify that `seal(token_id)` opens correctly.
-        let cover_id = cred.cover_id;
-        let key_id = &cred.key_id;
-        let (k_mac, _) = match self.kms.derive(key_id, &cover_id, token_id) {
-            Ok(v) => v,
-            Err(_) => return Ok(()), // if KMS missing, skip check (MVP)
+        let keys = self.kms.derive(&cred.key_id, &cred.cover_id)?;
+        use capglyph_core::framing::{
+            credential_payload, credential_token_id, open_typed, try_seal_typed, Params,
+            PayloadType,
         };
-        use capglyph_core::framing::{open, Params, PayloadType};
         let params = Params {
             version: 1,
             payload_type: PayloadType::Credential,
             flags: 0,
         };
-        let sealed = capglyph_core::framing::seal(token_id, &params, &k_mac);
-        let (_hdr, payload) = open(&sealed, &k_mac).map_err(|_| ServerError::InvalidToken)?;
-        if payload != token_id {
+        let payload = credential_payload(token_id);
+        let sealed = try_seal_typed(&payload, &params, keys.k_mac())?;
+        let (header, opened) = open_typed(&sealed, keys.k_mac())?;
+        if credential_token_id(&opened, header.flags)? != *token_id {
             return Err(ServerError::InvalidToken);
         }
         Ok(())
+    }
+
+    fn validate_scope_shape(scope: &serde_json::Value) -> Result<()> {
+        let values = scope.as_array().ok_or_else(|| {
+            ServerError::Conflict("scope must be an array of non-empty strings".into())
+        })?;
+        if values
+            .iter()
+            .any(|value| value.as_str().is_none_or(str::is_empty))
+        {
+            return Err(ServerError::Conflict(
+                "scope must be an array of non-empty strings".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn authorize_credential(cred: &Credential, auth: &AuthorizationContext) -> Result<()> {
+        if let Some(subject_id) = cred.subject_id {
+            if auth.actor_id != Some(subject_id) {
+                return Err(ServerError::Unauthorized(
+                    "credential is bound to another subject".into(),
+                ));
+            }
+        }
+
+        Self::validate_scope_shape(&cred.scope)?;
+        let scopes = cred.scope.as_array().expect("validated scope array");
+        if scopes.is_empty() {
+            if auth.requested_scope.is_some() {
+                return Err(ServerError::ScopeDenied);
+            }
+            return Ok(());
+        }
+        let requested = auth
+            .requested_scope
+            .as_deref()
+            .ok_or(ServerError::ScopeDenied)?;
+        if !scopes.iter().any(|scope| scope.as_str() == Some(requested)) {
+            return Err(ServerError::ScopeDenied);
+        }
+        Ok(())
+    }
+
+    /// Hash all semantic consume inputs. Callers must not supply this hash.
+    pub fn consume_request_hash(token_id_str: &str, auth: &AuthorizationContext) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"capglyph/consume-request/v1\0");
+        hasher.update((token_id_str.len() as u64).to_be_bytes());
+        hasher.update(token_id_str.as_bytes());
+        match auth.actor_id {
+            Some(actor) => {
+                hasher.update([1]);
+                hasher.update(actor.as_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        match auth.requested_scope.as_deref() {
+            Some(scope) => {
+                hasher.update([1]);
+                hasher.update((scope.len() as u64).to_be_bytes());
+                hasher.update(scope.as_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        hasher.finalize().into()
     }
 
     // ── Consume (atomic) ──────────────────────────────────────────────────────
@@ -302,28 +358,51 @@ impl Service {
         idempotency_key: &str,
         actor_id: Option<Uuid>,
     ) -> Result<crate::models::ConsumeResponse> {
+        let auth = AuthorizationContext {
+            actor_id,
+            requested_scope: None,
+        };
+        self.consume_authorized(token_id_str, idempotency_key, &auth)
+    }
+
+    pub fn consume_authorized(
+        &self,
+        token_id_str: &str,
+        idempotency_key: &str,
+        auth: &AuthorizationContext,
+    ) -> Result<crate::models::ConsumeResponse> {
+        if idempotency_key.trim().is_empty() {
+            return Err(ServerError::Conflict(
+                "idempotency key must not be empty".into(),
+            ));
+        }
         let token_id = parse_token_id(token_id_str).map_err(|_| ServerError::InvalidToken)?;
         let token_hash = sha256(&token_id);
 
-        // Verify framing MAC before touching DB (fail-closed if MAC fails)
-        // We need credential to get cover_id/key_id for K_mac derivation.
-        // So first fetch credential (read-only) to derive K_mac, verify, then atomic consume.
-        if let Some(cred) = self.db.get_credential_by_token_hash(&token_hash)? {
-            let _ = self.verify_framing(&cred, &token_id);
-        }
-
         let cred = self
             .db
-            .consume(&token_hash, idempotency_key, actor_id, None)?;
+            .get_credential_by_token_hash(&token_hash)?
+            .ok_or_else(|| ServerError::NotFound("credential not found".into()))?;
+        self.verify_framing(&cred, &token_id)?;
+        Self::authorize_credential(&cred, auth)?;
 
-        // Check if this was an idempotent replay: if use_count didn't increase relative to
-        // previous? For MVP we treat replay as success with same use_count.
-        // To detect replay, we could query consumptions, but we just return.
+        // Bind idempotency to the semantic request on the trusted side of the
+        // API. Callers cannot supply a hash that disguises another token,
+        // actor, or requested scope.
+        let request_hash = Self::consume_request_hash(token_id_str, auth);
+        let (cred, replayed) =
+            self.db
+                .consume(&token_hash, idempotency_key, auth.actor_id, &request_hash)?;
+
         Ok(crate::models::ConsumeResponse {
             credential_id: cred.id,
             use_count: cred.use_count,
             max_uses: cred.max_uses,
-            outcome: "consumed".into(),
+            outcome: if replayed {
+                "idempotent_replay".into()
+            } else {
+                "consumed".into()
+            },
         })
     }
 
@@ -333,10 +412,58 @@ impl Service {
         self.db.revoke(credential_id, actor_id)
     }
 
+    pub fn revoke_authorized(
+        &self,
+        credential_id: &Uuid,
+        auth: &AuthorizationContext,
+        token_id: Option<&str>,
+    ) -> Result<Credential> {
+        let cred = self.get(credential_id)?;
+        Self::authorize_subject_or_token(&cred, auth, token_id)?;
+        self.db.revoke(credential_id, auth.actor_id)
+    }
+
     pub fn get(&self, credential_id: &Uuid) -> Result<Credential> {
         self.db
             .get_credential(credential_id)?
             .ok_or_else(|| ServerError::NotFound(format!("credential {}", credential_id)))
+    }
+
+    pub fn get_authorized(
+        &self,
+        credential_id: &Uuid,
+        auth: &AuthorizationContext,
+        token_id: Option<&str>,
+    ) -> Result<Credential> {
+        let cred = self.get(credential_id)?;
+        Self::authorize_subject_or_token(&cred, auth, token_id)?;
+        Ok(cred)
+    }
+
+    fn authorize_subject_or_token(
+        cred: &Credential,
+        auth: &AuthorizationContext,
+        token_id: Option<&str>,
+    ) -> Result<()> {
+        if let Some(subject_id) = cred.subject_id {
+            return if auth.actor_id == Some(subject_id) {
+                Ok(())
+            } else {
+                Err(ServerError::Unauthorized(
+                    "credential is bound to another subject".into(),
+                ))
+            };
+        }
+
+        let token_id = token_id.ok_or_else(|| {
+            ServerError::Unauthorized("bearer credential requires token proof".into())
+        })?;
+        let token_id = parse_token_id(token_id)
+            .map_err(|_| ServerError::Unauthorized("invalid token proof".into()))?;
+        if sha256(&token_id) != cred.token_hash {
+            return Err(ServerError::Unauthorized("invalid token proof".into()));
+        }
+        Ok(())
     }
 
     // ── Image-based verify/consume (carrier integration stub) ─────────────────
@@ -368,7 +495,7 @@ impl Service {
         key: &[u8; 32],
         nonce_bytes: &[u8; 12],
     ) -> Result<(Vec<u8>, Vec<u8>)> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, Nonce};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, KeyInit, Nonce};
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
         let nonce = Nonce::from_slice(nonce_bytes);
         let combined = cipher
@@ -389,7 +516,7 @@ impl Service {
         key: &[u8; 32],
         nonce_bytes: &[u8; 12],
     ) -> Result<Vec<u8>> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, Nonce};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, KeyInit, Nonce};
         let mut combined = Vec::with_capacity(ciphertext.len() + tag.len());
         combined.extend_from_slice(ciphertext);
         combined.extend_from_slice(tag);
@@ -540,7 +667,7 @@ impl Service {
 
     /// Direct object lookup by object_id (for offline pointer: object_id + content_key in carrier).
     /// Still requires authorization check via policy.
-    pub fn get_message_object(&self, object_id: &Uuid) -> Result<MessageObject> {
+    fn get_message_object(&self, object_id: &Uuid) -> Result<MessageObject> {
         self.db
             .get_message_object(object_id)?
             .ok_or_else(|| ServerError::NotFound(format!("message object {}", object_id)))
